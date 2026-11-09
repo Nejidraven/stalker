@@ -1,0 +1,17 @@
+# Godot 4
+.godot/
+.import/
+export_presets.cfg
+*.translation
+.mono/
+data_*/
+
+# Blender
+*.blend1
+*.blend2
+
+# Временное и системное
+*.tmp
+*.zip
+Thumbs.db
+.DS_Store

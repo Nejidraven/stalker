@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="Weapon" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/weapon.gd" id="1_weapon"]
+[ext_resource type="Texture2D" path="res://assets/icons/ak74.png" id="2_icon"]
+
+[resource]
+script = ExtResource("1_weapon")
+slot = 2
+ammo_id = &"ammo_545"
+damage = 30.0
+fire_rate = 600.0
+magazine_size = 30
+reload_time = 2.4
+spread_deg = 0.8
+max_range = 200.0
+recoil_pitch_deg = 0.9
+recoil_yaw_deg = 0.5
+can_single = true
+can_auto = true
+model_path = "res://assets/rifle.glb"
+hold_offset = Vector3(0, 0, -0.3)
+muzzle_offset = Vector3(0, 0.045, -0.54)
+hands_path = "res://assets/hands_rifle.glb"
+ads_offset = Vector3(0, -0.087, 0.05)
+ads_fov = 55.0
+shot_sound_path = "res://assets/audio/rifle_shot.wav"
+shot_volume_db = -12.0
+id = &"ak74"
+display_name = "Автомат АК-74"
+description = "Автомат под 5.45×39. Очередь и одиночные (клавиша B). Магазин на 30 патронов."
+icon = ExtResource("2_icon")
+weight = 3.6
+category = 5
+max_stack = 1
+world_color = Color(0.45, 0.3, 0.18, 1)

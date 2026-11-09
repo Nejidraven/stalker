@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="Weapon" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/weapon.gd" id="1_weapon"]
+[ext_resource type="Texture2D" path="res://assets/icons/pistol.png" id="2_icon"]
+
+[resource]
+script = ExtResource("1_weapon")
+slot = 1
+ammo_id = &"ammo_9x18"
+damage = 22.0
+fire_rate = 360.0
+magazine_size = 8
+reload_time = 1.4
+spread_deg = 0.5
+max_range = 120.0
+recoil_pitch_deg = 1.6
+recoil_yaw_deg = 0.5
+can_single = true
+can_auto = false
+model_path = "res://assets/pistol.glb"
+hold_offset = Vector3(0, 0.02, -0.38)
+muzzle_offset = Vector3(0, 0.03, -0.15)
+hands_path = "res://assets/hands_pistol.glb"
+ads_offset = Vector3(0, -0.074, 0.06)
+ads_fov = 64.0
+shot_sound_path = "res://assets/audio/pistol_shot.wav"
+shot_volume_db = -14.0
+id = &"pistol_pm"
+display_name = "Пистолет ПМ"
+description = "Надёжный пистолет под 9×18. Только одиночные выстрелы. Магазин на 8 патронов."
+icon = ExtResource("2_icon")
+weight = 0.8
+category = 5
+max_stack = 1
+world_color = Color(0.35, 0.37, 0.42, 1)

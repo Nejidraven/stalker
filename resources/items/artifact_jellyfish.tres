@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="Item" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/item.gd" id="1_item"]
+[ext_resource type="Texture2D" path="res://assets/icons/artifact_jellyfish.png" id="2_icon"]
+
+[resource]
+script = ExtResource("1_item")
+id = &"artifact_jellyfish"
+display_name = "Медуза"
+description = "Артефакт из аномалии. Слабо светится в темноте. Свойства будут добавлены вместе с системой артефактов."
+icon = ExtResource("2_icon")
+weight = 0.5
+category = 3
+max_stack = 1
+heal_amount = 0.0
+world_color = Color(0.2, 0.7, 0.9, 1)

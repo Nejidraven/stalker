@@ -1,0 +1,360 @@
+extends CharacterBody3D
+## Игрок: ходьба, бег, прыжок, камера на SpringArm3D (третье лицо, клавиша V переключает на первое).
+## Этап 2.1: добавлены здоровье и выносливость (для HUD). Сетевой части нет, игра одиночная.
+
+signal health_changed(current: float, maximum: float)
+signal stamina_changed(current: float, maximum: float)
+signal died
+## exposure — суммарная скорость накопления радиации прямо сейчас (0, если игрок вне зон)
+signal radiation_changed(current: float, maximum: float, exposure: float)
+
+@export_group("Движение")
+@export var walk_speed: float = 4.0
+@export var run_speed: float = 7.5
+@export var jump_velocity: float = 4.5
+@export var acceleration: float = 14.0
+@export var air_control: float = 0.4
+@export var turn_speed: float = 10.0
+
+@export_group("Камера")
+@export var mouse_sensitivity: float = 0.003
+@export var min_pitch_deg: float = -70.0
+@export var max_pitch_deg: float = 30.0
+## Старт в виде от первого лица (переключение клавишей V)
+@export var start_first_person: bool = false
+## Пределы наклона камеры в первом лице
+@export var fp_min_pitch_deg: float = -85.0
+@export var fp_max_pitch_deg: float = 85.0
+
+@export_group("Здоровье и выносливость")
+@export var max_health: float = 100.0
+@export var max_stamina: float = 100.0
+@export var sprint_drain: float = 18.0        # расход выносливости на бегу, ед/сек
+@export var jump_cost: float = 8.0
+@export var regen_rate: float = 12.0          # восстановление, ед/сек
+@export var regen_delay: float = 0.8          # пауза перед восстановлением, сек
+@export var exhausted_recover: float = 20.0   # после полного истощения бег доступен снова с этого значения
+
+@export_group("Радиация")
+@export var max_radiation: float = 100.0
+## Урон здоровью в секунду при полной лучевой болезни
+@export var radiation_damage_rate: float = 2.0
+## Доля шкалы, до которой лучевая болезнь ещё не вредит здоровью
+@export_range(0.0, 0.9) var radiation_safe_fraction: float = 0.1
+
+var health: float
+var stamina: float
+var radiation: float = 0.0
+
+var _exposures: Dictionary = {}   # id источника -> скорость накопления
+var _last_exposure: float = 0.0
+var _geiger: AudioStreamPlayer
+
+var _sprinting: bool = false
+var _exhausted: bool = false
+var _regen_delay_left: float = 0.0
+var _spawn_point: Vector3
+var _first_person: bool = false
+var _third_person_length: float = 3.5
+var _view_tween: Tween
+
+## Множители от оружия: при прицеливании поворот мыши и ходьба медленнее
+var look_scale: float = 1.0
+var move_scale: float = 1.0
+
+var _trauma: float = 0.0      # сила тряски камеры от попаданий, 0..1
+var _bob_time: float = 0.0
+var _bob_blend: float = 0.0
+
+@onready var camera: Camera3D = $SpringArm3D/Camera3D
+@onready var spring_arm: SpringArm3D = $SpringArm3D
+@onready var visual: MeshInstance3D = $Mesh
+
+
+func _ready() -> void:
+	add_to_group("player")
+	health = max_health
+	stamina = max_stamina
+	_spawn_point = global_position
+	_setup_input_map()
+	# Камера не должна упираться в капсулу самого игрока
+	spring_arm.add_excluded_object(get_rid())
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_setup_geiger()
+	_third_person_length = spring_arm.spring_length
+	if start_first_person:
+		_set_view(true, true)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		var sens := mouse_sensitivity * look_scale
+		spring_arm.rotation.y -= event.relative.x * sens
+		var pitch_min := fp_min_pitch_deg if _first_person else min_pitch_deg
+		var pitch_max := fp_max_pitch_deg if _first_person else max_pitch_deg
+		spring_arm.rotation.x = clampf(
+			spring_arm.rotation.x - event.relative.y * sens,
+			deg_to_rad(pitch_min),
+			deg_to_rad(pitch_max)
+		)
+	elif event.is_action_pressed("toggle_view"):
+		_set_view(not _first_person)
+	elif event.is_action_pressed("ui_cancel"):
+		# Esc: отпустить / снова захватить мышь
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		else:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	elif event is InputEventKey and event.pressed and not event.echo:
+		# ВРЕМЕННО, для проверки HUD: K = -10 здоровья, L = +10 здоровья
+		if event.physical_keycode == KEY_K:
+			take_damage(10.0)
+		elif event.physical_keycode == KEY_L:
+			heal(10.0)
+
+
+func _physics_process(delta: float) -> void:
+	# Защита от падения за край карты
+	if global_position.y < -30.0:
+		global_position = _spawn_point
+		velocity = Vector3.ZERO
+
+	var input_dir: Vector2 = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	# Направление считается относительно поворота камеры по горизонтали
+	var yaw_basis := Basis(Vector3.UP, spring_arm.rotation.y)
+	var direction: Vector3 = yaw_basis * Vector3(input_dir.x, 0.0, input_dir.y)
+	var moving := direction.length() > 0.1
+
+	if is_on_floor():
+		_sprinting = Input.is_action_pressed("sprint") and moving and not _exhausted and stamina > 0.0
+		if Input.is_action_just_pressed("jump") and stamina >= jump_cost:
+			velocity.y = jump_velocity
+			_spend_stamina(jump_cost)
+	else:
+		velocity += get_gravity() * delta
+
+	var speed: float = (run_speed if _sprinting else walk_speed) * move_scale
+	var accel: float = acceleration if is_on_floor() else acceleration * air_control
+
+	velocity.x = move_toward(velocity.x, direction.x * speed, accel * delta)
+	velocity.z = move_toward(velocity.z, direction.z * speed, accel * delta)
+
+	# Модель плавно поворачивается в сторону движения
+	if moving:
+		var target_yaw: float = atan2(-direction.x, -direction.z)
+		visual.rotation.y = lerp_angle(visual.rotation.y, target_yaw, turn_speed * delta)
+
+	move_and_slide()
+	_update_stamina(delta, moving)
+	_update_radiation(delta)
+
+
+# --- Здоровье ------------------------------------------------------------
+
+func take_damage(amount: float) -> void:
+	if health <= 0.0:
+		return
+	health = maxf(health - amount, 0.0)
+	health_changed.emit(health, max_health)
+	if amount >= 1.0:
+		add_trauma(clampf(amount / 20.0, 0.3, 1.0))   # удар: камеру трясёт, как при потере равновесия
+	if health <= 0.0:
+		died.emit()  # обработка смерти появится на следующих этапах
+
+
+func is_sprinting() -> bool:
+	return _sprinting
+
+
+## Скорость по земле, м/с (для разброса и покачивания оружия)
+func get_move_speed() -> float:
+	return Vector2(velocity.x, velocity.z).length()
+
+
+## Тряска камеры (0..1): попадания, взрывы.
+func add_trauma(amount: float) -> void:
+	_trauma = minf(_trauma + amount, 1.0)
+
+
+func get_trauma() -> float:
+	return _trauma
+
+
+## Покачивание камеры при шагах и тряска от попаданий. Оружие привязано к рычагу камеры,
+## а не к самой камере, поэтому на экране оно качается относительно вида (как с нагрудной камеры).
+func _process(delta: float) -> void:
+	var speed := get_move_speed() if is_on_floor() else 0.0
+	var target_blend := clampf(speed / run_speed, 0.0, 1.0)
+	_bob_blend = lerpf(_bob_blend, target_blend, minf(delta * 8.0, 1.0))
+	_bob_time += delta * (6.0 + speed * 1.1)
+	var strength := 1.6 if _sprinting else 1.0
+	if not _first_person:
+		strength *= 0.25
+	var bob := Vector3(
+		cos(_bob_time * 0.5) * 0.018,
+		absf(sin(_bob_time * 0.5)) * 0.028 - 0.014,
+		0.0
+	) * _bob_blend * strength
+
+	_trauma = maxf(_trauma - delta * 1.2, 0.0)
+	var shake := pow(_trauma, 1.5)   # степень 1.5: слабые удары тоже заметны, сильные не безумны
+	# Позицию камеры не трогаем: ею управляет SpringArm3D. Сдвигаем только кадр.
+	camera.h_offset = bob.x + randf_range(-1.0, 1.0) * shake * 0.07
+	camera.v_offset = bob.y + randf_range(-1.0, 1.0) * shake * 0.07
+	camera.rotation = Vector3(
+		randf_range(-1.0, 1.0) * shake * 0.14,
+		randf_range(-1.0, 1.0) * shake * 0.11,
+		randf_range(-1.0, 1.0) * shake * 0.2 + cos(_bob_time * 0.5) * 0.004 * _bob_blend * strength
+	)
+
+
+func heal(amount: float) -> void:
+	if health <= 0.0:
+		return
+	health = minf(health + amount, max_health)
+	health_changed.emit(health, max_health)
+
+
+# --- Радиация ------------------------------------------------------------
+
+## Зона сообщает, с какой скоростью игрок сейчас получает дозу. rate <= 0 убирает источник.
+func set_radiation_exposure(source_id: int, rate: float) -> void:
+	if rate <= 0.0:
+		_exposures.erase(source_id)
+	else:
+		_exposures[source_id] = rate
+
+
+func get_radiation_exposure() -> float:
+	var total := 0.0
+	for rate: float in _exposures.values():
+		total += rate
+	return total
+
+
+## Выводит часть накопленной дозы (антирад, водка).
+func reduce_radiation(amount: float) -> void:
+	radiation = maxf(radiation - amount, 0.0)
+	radiation_changed.emit(radiation, max_radiation, get_radiation_exposure())
+
+
+func _update_radiation(delta: float) -> void:
+	var exposure := get_radiation_exposure()
+	var previous := radiation
+	if exposure > 0.0 and health > 0.0:
+		radiation = minf(radiation + exposure * delta, max_radiation)
+
+	# Лучевая болезнь: выше безопасного порога постепенно съедает здоровье
+	var fraction := radiation / max_radiation
+	if fraction > radiation_safe_fraction:
+		var severity := (fraction - radiation_safe_fraction) / (1.0 - radiation_safe_fraction)
+		take_damage(radiation_damage_rate * severity * delta)
+
+	# Счётчик Гейгера: чем сильнее излучение, тем чаще щелчки
+	if exposure > 0.0 and _geiger != null and _geiger.stream != null:
+		if randf() < minf(exposure * 6.0, 30.0) * delta:
+			_geiger.pitch_scale = randf_range(0.9, 1.15)
+			_geiger.play()
+
+	if not is_equal_approx(previous, radiation) or not is_equal_approx(_last_exposure, exposure):
+		_last_exposure = exposure
+		radiation_changed.emit(radiation, max_radiation, exposure)
+
+
+func _setup_geiger() -> void:
+	_geiger = AudioStreamPlayer.new()
+	_geiger.volume_db = -18.0
+	var path := "res://assets/audio/geiger_click.wav"
+	if ResourceLoader.exists(path):
+		_geiger.stream = load(path) as AudioStream
+	add_child(_geiger)
+
+
+# --- Выносливость --------------------------------------------------------
+
+func _spend_stamina(amount: float) -> void:
+	stamina = maxf(stamina - amount, 0.0)
+	_regen_delay_left = regen_delay
+	stamina_changed.emit(stamina, max_stamina)
+
+
+func _update_stamina(delta: float, moving: bool) -> void:
+	var previous := stamina
+	if _sprinting and moving:
+		stamina = maxf(stamina - sprint_drain * delta, 0.0)
+		_regen_delay_left = regen_delay
+		if stamina <= 0.0:
+			_exhausted = true
+			_sprinting = false
+	elif _regen_delay_left > 0.0:
+		_regen_delay_left -= delta
+	else:
+		stamina = minf(stamina + regen_rate * delta, max_stamina)
+
+	if _exhausted and stamina >= exhausted_recover:
+		_exhausted = false
+
+	if not is_equal_approx(previous, stamina):
+		stamina_changed.emit(stamina, max_stamina)
+
+
+# --- Камера --------------------------------------------------------------
+
+func is_first_person() -> bool:
+	return _first_person
+
+
+## Отдача оружия: камера поднимается вверх и чуть уходит в сторону.
+func add_recoil(pitch_deg: float, yaw_deg: float) -> void:
+	var pitch_max := fp_max_pitch_deg if _first_person else max_pitch_deg
+	spring_arm.rotation.x = minf(spring_arm.rotation.x + deg_to_rad(pitch_deg), deg_to_rad(pitch_max))
+	spring_arm.rotation.y += deg_to_rad(yaw_deg)
+
+
+## Переключает вид: от первого лица (камера у глаз, модель скрыта) или от третьего.
+func _set_view(first_person: bool, instant: bool = false) -> void:
+	_first_person = first_person
+	if _view_tween != null and _view_tween.is_valid():
+		_view_tween.kill()
+
+	if not first_person:
+		visual.visible = true   # модель видна сразу, пока камера отъезжает
+		spring_arm.rotation.x = clampf(
+			spring_arm.rotation.x, deg_to_rad(min_pitch_deg), deg_to_rad(max_pitch_deg)
+		)
+
+	var target_length := 0.0 if first_person else _third_person_length
+	if instant:
+		spring_arm.spring_length = target_length
+		visual.visible = not first_person
+		return
+
+	_view_tween = create_tween()
+	_view_tween.tween_property(spring_arm, "spring_length", target_length, 0.2)
+	if first_person:
+		_view_tween.tween_callback(func() -> void: visual.visible = false)
+
+
+## Регистрирует действия управления, если их ещё нет в Input Map проекта.
+## Позже их можно перенести в Project Settings -> Input Map.
+func _setup_input_map() -> void:
+	var bindings: Dictionary = {
+		"move_forward": KEY_W,
+		"move_back": KEY_S,
+		"move_left": KEY_A,
+		"move_right": KEY_D,
+		"jump": KEY_SPACE,
+		"sprint": KEY_SHIFT,
+		"interact": KEY_E,
+		"inventory": KEY_TAB,
+		"toggle_view": KEY_V,
+		"drop_item": KEY_G,
+		"dev_console": KEY_QUOTELEFT,   # «ё» на русской раскладке (клавиша слева от 1)
+	}
+	for action: String in bindings:
+		if InputMap.has_action(action):
+			continue
+		InputMap.add_action(action)
+		var key_event := InputEventKey.new()
+		key_event.physical_keycode = bindings[action]
+		InputMap.action_add_event(action, key_event)

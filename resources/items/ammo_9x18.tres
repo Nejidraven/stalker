@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="Item" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/item.gd" id="1_item"]
+[ext_resource type="Texture2D" path="res://assets/icons/ammo_9x18.png" id="2_icon"]
+
+[resource]
+script = ExtResource("1_item")
+id = &"ammo_9x18"
+display_name = "Патроны 9×18"
+description = "Пистолетные патроны. Подходят к ПМ."
+icon = ExtResource("2_icon")
+weight = 0.01
+category = 2
+max_stack = 50
+heal_amount = 0.0
+world_color = Color(0.55, 0.6, 0.7, 1)
