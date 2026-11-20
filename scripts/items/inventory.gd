@@ -19,6 +19,7 @@ signal item_dropped(item: Item, amount: int)
 ## Слоты снаряжения: слот -> Item (по одному предмету в слоте)
 const SLOT_PRIMARY := &"primary"
 const SLOT_PISTOL := &"pistol"
+const SLOT_MELEE := &"melee"
 
 ## Экипировали или сняли предмет в слоте снаряжения
 signal equipment_changed(slot_name: StringName)
@@ -54,7 +55,10 @@ func get_total_weight() -> float:
 ## В какой слот снаряжения подходит предмет (пустое имя, если ни в какой).
 static func equipment_slot_for(item: Item) -> StringName:
 	if item is Weapon:
-		return SLOT_PISTOL if (item as Weapon).slot == 1 else SLOT_PRIMARY
+		var wslot := (item as Weapon).slot
+		if wslot == 1:
+			return SLOT_PISTOL
+		return SLOT_MELEE if wslot == 3 else SLOT_PRIMARY
 	return &""
 
 

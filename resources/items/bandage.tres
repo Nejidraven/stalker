@@ -1,7 +1,8 @@
-[gd_resource type="Resource" script_class="Item" load_steps=3 format=3]
+[gd_resource type="Resource" script_class="Item" load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/items/item.gd" id="1_item"]
 [ext_resource type="Texture2D" path="res://assets/icons/bandage.png" id="2_icon"]
+[ext_resource type="PackedScene" path="res://assets/bandage.glb" id="3_model"]
 
 [resource]
 script = ExtResource("1_item")
@@ -14,3 +15,4 @@ category = 0
 max_stack = 5
 heal_amount = 15.0
 world_color = Color(0.8, 0.78, 0.7, 1)
+world_model = "res://assets/bandage.glb"

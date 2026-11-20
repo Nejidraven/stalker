@@ -24,6 +24,11 @@ extends Item
 @export var recoil_yaw_deg: float = 0.4
 @export var can_single: bool = true
 @export var can_auto: bool = false
+## Холодное оружие: без патронов и прицела, ЛКМ — удар
+@export var melee: bool = false
+@export var melee_range: float = 1.9
+## Наклон оружия вверх от первого лица (градусы)
+@export var fp_pitch_deg: float = 0.0
 
 @export_group("Вид и звук")
 ## Модель в руках (ствол направлен в -Z, как после экспорта из Blender)
@@ -34,6 +39,8 @@ extends Item
 @export var muzzle_offset: Vector3 = Vector3(0.0, 0.03, -0.15)
 ## Временная модель рук (видна от первого лица), в тех же координатах, что и оружие
 @export var hands_path: String = ""
+## Какая поза рук от первого лица (анимации fp_<поза>_idle/walk/run): rifle или pistol
+@export var fp_pose: StringName = &"rifle"
 ## Положение оружия относительно камеры при прицеливании: мушка на линии взгляда
 @export var ads_offset: Vector3 = Vector3(0.0, -0.08, 0.05)
 ## Угол обзора при прицеливании (обычный задаётся камерой игрока)

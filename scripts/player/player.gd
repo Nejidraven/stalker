@@ -9,8 +9,8 @@ signal died
 signal radiation_changed(current: float, maximum: float, exposure: float)
 
 @export_group("Движение")
-@export var walk_speed: float = 4.0
-@export var run_speed: float = 7.5
+@export var walk_speed: float = 1.8
+@export var run_speed: float = 3.8
 @export var jump_velocity: float = 4.5
 @export var acceleration: float = 14.0
 @export var air_control: float = 0.4
@@ -25,6 +25,15 @@ signal radiation_changed(current: float, maximum: float, exposure: float)
 ## Пределы наклона камеры в первом лице
 @export var fp_min_pitch_deg: float = -85.0
 @export var fp_max_pitch_deg: float = 85.0
+
+@export_group("Анимация")
+## Скорость (м/с), на которую рассчитаны анимации ходьбы и бега: по ней подбирается темп шагов
+@export var anim_walk_speed: float = 0.7333
+@export var anim_run_speed: float = 1.937
+## Быстрее этой скорости вместо ходьбы включается бег
+@export var anim_run_threshold: float = 2.2
+## Время плавного перехода между анимациями, сек
+@export var anim_blend: float = 0.35
 
 @export_group("Здоровье и выносливость")
 @export var max_health: float = 100.0
@@ -55,6 +64,10 @@ var _exhausted: bool = false
 var _regen_delay_left: float = 0.0
 var _spawn_point: Vector3
 var _first_person: bool = false
+## Камера от третьего лица смещена вправо от головы, чтобы перекрестие было сбоку от модели
+@export var shoulder_offset: float = 0.55
+var _shoulder_cur: float = 0.0
+var _arm_base_y: float = 1.6
 var _third_person_length: float = 3.5
 var _view_tween: Tween
 
@@ -68,7 +81,15 @@ var _bob_blend: float = 0.0
 
 @onready var camera: Camera3D = $SpringArm3D/Camera3D
 @onready var spring_arm: SpringArm3D = $SpringArm3D
-@onready var visual: MeshInstance3D = $Mesh
+@onready var visual: Node3D = $Mesh
+@onready var _weapons: Node = get_node_or_null("WeaponController")
+var _anim: AnimationPlayer
+var _draw_anim: AnimationPlayer   # второй плеер: доставание двигает только руки, ноги идут как шли
+var _draw_prev_t: float = 1.0
+var _stab_prev: float = 0.0
+var _head_aim: SkeletonModifier3D
+var _aim_cam: float = 0.0
+var _fp_arms: Node3D
 
 
 func _ready() -> void:
@@ -82,6 +103,9 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_setup_geiger()
 	_third_person_length = spring_arm.spring_length
+	_arm_base_y = spring_arm.position.y
+	_setup_animation()
+	_setup_fp_arms()
 	if start_first_person:
 		_set_view(true, true)
 
@@ -140,11 +164,15 @@ func _physics_process(delta: float) -> void:
 	velocity.z = move_toward(velocity.z, direction.z * speed, accel * delta)
 
 	# Модель плавно поворачивается в сторону движения
-	if moving:
+	var aiming_now: bool = _weapons != null and bool(_weapons.get("_aiming"))
+	if aiming_now:
+		visual.rotation.y = lerp_angle(visual.rotation.y, spring_arm.rotation.y, turn_speed * delta)
+	elif moving:
 		var target_yaw: float = atan2(-direction.x, -direction.z)
 		visual.rotation.y = lerp_angle(visual.rotation.y, target_yaw, turn_speed * delta)
 
 	move_and_slide()
+	_update_animation()
 	_update_stamina(delta, moving)
 	_update_radiation(delta)
 
@@ -183,6 +211,19 @@ func get_trauma() -> float:
 ## Покачивание камеры при шагах и тряска от попаданий. Оружие привязано к рычагу камеры,
 ## а не к самой камере, поэтому на экране оно качается относительно вида (как с нагрудной камеры).
 func _process(delta: float) -> void:
+	# Прицеливание от третьего лица: камера ближе и ещё чуть правее, голова склоняется к оружию
+	var aim_t := 0.0
+	if not _first_person and _weapons != null and _weapons.get("current") != null:
+		aim_t = float(_weapons.get("_aim_blend"))
+	_aim_cam = aim_t
+	if _head_aim != null:
+		_head_aim.set("roll_deg", 13.0 * aim_t)
+		_head_aim.set("pitch_deg", clampf(-spring_arm.rotation.x, -0.6, 0.6) * 0.6 * aim_t * 57.2958)
+	if not _first_person and (_view_tween == null or not _view_tween.is_running()):
+		spring_arm.spring_length = _third_person_length * lerpf(1.0, 0.72, aim_t)
+	var sh_target := 0.0 if _first_person else shoulder_offset * lerpf(1.0, 1.3, aim_t)
+	_shoulder_cur = lerpf(_shoulder_cur, sh_target, minf(delta * 10.0, 1.0))
+	spring_arm.position = Vector3(0.0, _arm_base_y - 0.06 * _aim_cam, 0.0) + Basis(Vector3.UP, spring_arm.rotation.y) * Vector3(_shoulder_cur, 0.0, 0.0)
 	var speed := get_move_speed() if is_on_floor() else 0.0
 	var target_blend := clampf(speed / run_speed, 0.0, 1.0)
 	_bob_blend = lerpf(_bob_blend, target_blend, minf(delta * 8.0, 1.0))
@@ -192,9 +233,12 @@ func _process(delta: float) -> void:
 		strength *= 0.25
 	var bob := Vector3(
 		cos(_bob_time * 0.5) * 0.018,
-		absf(sin(_bob_time * 0.5)) * 0.028 - 0.014,
+		(absf(sin(_bob_time * 0.5)) * 0.028 - 0.014 + sin(_bob_time) * 0.004) * (1.0 + 0.4 * (strength - 1.0)),
 		0.0
 	) * _bob_blend * strength
+	# Дыхание на месте: медленное (около 15 вдохов в минуту), гаснет при движении
+	var breath := sin(Time.get_ticks_msec() * 0.00165) * (1.0 - _bob_blend)
+	bob.y += breath * 0.0022
 
 	_trauma = maxf(_trauma - delta * 1.2, 0.0)
 	var shake := pow(_trauma, 1.5)   # степень 1.5: слабые удары тоже заметны, сильные не безумны
@@ -204,8 +248,9 @@ func _process(delta: float) -> void:
 	camera.rotation = Vector3(
 		randf_range(-1.0, 1.0) * shake * 0.14,
 		randf_range(-1.0, 1.0) * shake * 0.11,
-		randf_range(-1.0, 1.0) * shake * 0.2 + cos(_bob_time * 0.5) * 0.004 * _bob_blend * strength
+		randf_range(-1.0, 1.0) * shake * 0.2 + cos(_bob_time * 0.5) * 0.006 * _bob_blend * strength
 	)
+	camera.rotation.x += breath * 0.0012
 
 
 func heal(amount: float) -> void:
@@ -304,6 +349,12 @@ func is_first_person() -> bool:
 	return _first_person
 
 
+## Вид от первого лица полностью включён (модель уже скрыта): руки/оружие от первого лица показываем только тогда,
+## чтобы при переключении не мелькала лишняя пара рук.
+func is_fp_settled() -> bool:
+	return _first_person and not visual.visible
+
+
 ## Отдача оружия: камера поднимается вверх и чуть уходит в сторону.
 func add_recoil(pitch_deg: float, yaw_deg: float) -> void:
 	var pitch_max := fp_max_pitch_deg if _first_person else max_pitch_deg
@@ -333,6 +384,176 @@ func _set_view(first_person: bool, instant: bool = false) -> void:
 	_view_tween.tween_property(spring_arm, "spring_length", target_length, 0.2)
 	if first_person:
 		_view_tween.tween_callback(func() -> void: visual.visible = false)
+
+
+# --- Анимация модели -----------------------------------------------------
+
+func _setup_animation() -> void:
+	_anim = visual.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	if _anim == null:
+		push_warning("Player: у модели нет AnimationPlayer, анимации отключены")
+		return
+	for anim_name: StringName in _anim.get_animation_list():
+		var anim := _anim.get_animation(anim_name)
+		if anim != null:
+			anim.loop_mode = Animation.LOOP_LINEAR
+	_setup_draw_layer()
+	var sk := visual.find_child("Skeleton3D", true, false) as Skeleton3D
+	if sk != null:
+		_head_aim = SkeletonModifier3D.new()
+		_head_aim.set_script(load("res://scripts/player/head_aim.gd"))
+		sk.add_child(_head_aim)
+	_play_anim("idle")
+
+
+## Доставание оружия: копии draw_* только с дорожками рук играются поверх основной анимации.
+func _setup_draw_layer() -> void:
+	var arm_bones := ["Shoulder", "UpperArm", "LowerArm", "Hand", "Thumb", "Index", "Middle", "Ring", "Pinky"]
+	var lib := AnimationLibrary.new()
+	for kind in ["rifle", "pistol", "knife"]:
+		var src_name := _anim_name("draw_" + kind)
+		if src_name == "":
+			continue
+		var anim := _anim.get_animation(src_name).duplicate() as Animation
+		anim.loop_mode = Animation.LOOP_NONE
+		for i in range(anim.get_track_count() - 1, -1, -1):
+			var bone := String(anim.track_get_path(i).get_concatenated_subnames())
+			var keep := false
+			for prefix: String in arm_bones:
+				if bone.begins_with(prefix):
+					keep = true
+					break
+			if not keep:
+				anim.remove_track(i)
+		lib.add_animation("draw_" + kind, anim)
+	# Атака ножом: кроме рук работают позвоночник, грудь, шея и голова (корпус поворачивается в ударе)
+	var atk_src := _anim_name("attack_knife")
+	if atk_src != "":
+		var atk := _anim.get_animation(atk_src).duplicate() as Animation
+		atk.loop_mode = Animation.LOOP_NONE
+		var atk_bones := arm_bones + ["Spine", "Chest", "Neck", "Head"]
+		for i in range(atk.get_track_count() - 1, -1, -1):
+			var bone := String(atk.track_get_path(i).get_concatenated_subnames())
+			var keep := false
+			for prefix: String in atk_bones:
+				if bone.begins_with(prefix):
+					keep = true
+					break
+			if not keep:
+				atk.remove_track(i)
+		lib.add_animation("attack_knife", atk)
+	_draw_anim = AnimationPlayer.new()
+	_draw_anim.name = "DrawLayer"
+	_anim.get_parent().add_child(_draw_anim)
+	_draw_anim.root_node = _anim.root_node
+	_draw_anim.add_animation_library("", lib)
+
+
+func _update_draw_layer() -> void:
+	if _draw_anim == null or _weapons == null:
+		return
+	var weapon: Variant = _weapons.get("current")
+	if weapon == null:
+		_draw_prev_t = 1.0
+		if _draw_anim.is_playing():
+			_draw_anim.stop()
+		return
+	# Удар ножом: играем анимацию атаки (замах, укол, возврат) поверх ходьбы
+	var stab := float(_weapons.get("_stab_t"))
+	if stab >= 0.99 and _stab_prev < 0.9 and _draw_anim.has_animation("attack_knife"):
+		_draw_anim.play("attack_knife", 0.05)
+		_draw_anim.speed_scale = _draw_anim.current_animation_length / 0.35
+	_stab_prev = stab
+	var t := float(_weapons.get("_draw_t"))
+	var anim_name := "draw_" + String(weapon.get("fp_pose"))
+	if t < 1.0 and (t < _draw_prev_t or not _draw_anim.is_playing()) and _draw_anim.has_animation(anim_name):
+		if t < _draw_prev_t:   # только что достали (или сменили) оружие
+			_draw_anim.play(anim_name)
+			_draw_anim.speed_scale = _draw_anim.current_animation_length / maxf(float(_weapons.call("_draw_time")), 0.05)
+	elif t >= 1.0 and _draw_anim.is_playing() and _draw_anim.current_animation != "attack_knife":
+		_draw_anim.stop()
+	_draw_prev_t = t
+
+
+## Godot при импорте может отрезать суффикс «_loop», поэтому ищем оба варианта имени.
+func _anim_name(base: String) -> String:
+	if _anim.has_animation(base):
+		return base
+	if _anim.has_animation(base + "_loop"):
+		return base + "_loop"
+	return ""
+
+
+func _play_anim(base: String, speed: float = 1.0) -> void:
+	var anim_name := _anim_name(base)
+	if anim_name == "":
+		return
+	if _anim.current_animation != anim_name:
+		# Переход ходьба <-> бег: сохраняем фазу шага, чтобы ноги не «перескакивали»
+		var phase := -1.0
+		var cur := String(_anim.current_animation)
+		if _is_gait_anim(cur) and _is_gait_anim(anim_name):
+			var cur_len := _anim.current_animation_length
+			if cur_len > 0.0:
+				phase = fposmod(_anim.current_animation_position / cur_len, 1.0)
+		var blend := anim_blend
+		if cur.begins_with("aim_") != anim_name.begins_with("aim_"):
+			blend = 0.15   # вход/выход из прицела: руки идут вместе с оружием
+		_anim.play(anim_name, blend)
+		if phase >= 0.0:
+			_anim.seek(phase * _anim.current_animation_length, false)
+	_anim.speed_scale = speed
+
+
+func _is_gait_anim(n: String) -> bool:
+	return n.contains("walk") or n.contains("run")
+
+
+## Выбор анимации по скорости: стоит / идёт / бежит; с оружием в руках берутся версии *_rifle.
+func _update_animation() -> void:
+	if _anim == null:
+		return
+	_update_draw_layer()
+	if not is_on_floor():
+		_anim.speed_scale = 0.4   # в прыжке и падении поза почти замирает
+		if _fp_arms != null:
+			_fp_arms.call("set_speed", 0.4)
+		return
+	var weapon: Variant = _weapons.get("current") if _weapons != null else null
+	var armed: bool = weapon != null
+	var kind := "rifle"
+	if armed:
+		kind = String(weapon.get("fp_pose"))
+	var suffix := "_" + kind if armed else ""
+	var aiming: bool = armed and bool(_weapons.get("_aiming"))
+	var speed := get_move_speed()
+	var gait := "idle"
+	var anim_scale := 1.0
+	if speed >= anim_run_threshold:
+		gait = "run"
+		anim_scale = clampf(speed / anim_run_speed, 0.7, 6.4)
+	elif speed >= 0.3:
+		gait = "walk"
+		anim_scale = clampf(speed / anim_walk_speed, 0.3, 5.2)
+	var base := gait
+	if aiming and gait != "run":
+		base = "aim_" + gait
+	_play_anim(base + suffix, anim_scale)
+	# Руки от первого лица: без оружия обычные анимации, с оружием позы fp_<оружие>_<шаг>
+	if _fp_arms != null:
+		var fp_name := gait
+		if armed:
+			fp_name = "fp_%s_%s" % [weapon.get("fp_pose"), gait]
+		_fp_arms.call("play", fp_name, anim_scale)
+
+
+## Руки от первого лица: отдельный узел с руками модели (см. fp_arms.gd).
+func _setup_fp_arms() -> void:
+	var arms := Node3D.new()
+	arms.name = "FpArms"
+	arms.set_script(load("res://scripts/player/fp_arms.gd"))
+	add_child(arms)
+	_fp_arms = arms
 
 
 ## Регистрирует действия управления, если их ещё нет в Input Map проекта.

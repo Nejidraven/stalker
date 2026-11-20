@@ -20,6 +20,10 @@ enum Category { MEDICINE, FOOD, AMMO, ARTIFACT, MISC, WEAPON }
 @export var radiation_reduce: float = 0.0
 ## Цвет временной 3D-заглушки на земле, пока нет настоящих моделей
 @export var world_color: Color = Color(0.6, 0.6, 0.6)
+## Модель, которая лежит на земле вместо цветной коробки (.glb из Blender).
+## Пусто = используется заглушка. Модель должна стоять на земле:
+## начало координат в центре нижней грани, «вверх» — +Y.
+@export var world_model: String = ""
 
 
 func is_usable() -> bool:

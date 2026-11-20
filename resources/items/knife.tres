@@ -1,0 +1,39 @@
+[gd_resource type="Resource" script_class="Weapon" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/weapon.gd" id="1_weapon"]
+[ext_resource type="Texture2D" path="res://assets/icons/knife.png" id="2_icon"]
+
+[resource]
+script = ExtResource("1_weapon")
+slot = 3
+ammo_id = &""
+damage = 45.0
+fire_rate = 100.0
+magazine_size = 0
+reload_time = 0.0
+spread_deg = 0.0
+max_range = 2.0
+recoil_pitch_deg = 0.0
+recoil_yaw_deg = 0.0
+can_single = false
+can_auto = false
+melee = true
+melee_range = 1.9
+fp_pitch_deg = 20.0
+model_path = "res://assets/knife.glb"
+hold_offset = Vector3(-0.03, 0.02, -0.38)
+muzzle_offset = Vector3(0, 0, -0.2)
+hands_path = ""
+fp_pose = &"knife"
+ads_offset = Vector3(0, 0, 0)
+ads_fov = 75.0
+shot_sound_path = ""
+shot_volume_db = -14.0
+id = &"knife_tactical"
+display_name = "Тактический нож"
+description = "Холодное оружие. ЛКМ — удар. Клавиша 3."
+icon = ExtResource("2_icon")
+weight = 0.4
+category = 5
+max_stack = 1
+world_color = Color(0.2, 0.2, 0.22, 1)

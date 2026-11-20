@@ -31,8 +31,9 @@ const DRAG_TYPE := "inventory_slot"
 const EQUIP_TITLES := {
 	&"primary": "ОСНОВНОЕ\nОРУЖИЕ\n[2]",
 	&"pistol": "ПИСТОЛЕТ\n[1]",
+	&"melee": "НОЖ\n[3]",
 }
-const EQUIP_KEYS := {&"primary": "[2]", &"pistol": "[1]"}
+const EQUIP_KEYS := {&"primary": "[2]", &"pistol": "[1]", &"melee": "[3]"}
 
 ## Слоты оружия и брони одного размера
 const EQUIP_SLOT_SIZE := Vector2(88, 196)
@@ -439,7 +440,8 @@ func _refresh_equipment() -> void:
 	var primary := _make_equip_slot(Inventory.SLOT_PRIMARY, EQUIP_SLOT_SIZE)
 	var armor := _slot_frame("БРОНЯ", EQUIP_SLOT_SIZE)
 	var pistol := _make_equip_slot(Inventory.SLOT_PISTOL, EQUIP_SLOT_SIZE)
-	for control: Control in [primary, armor, pistol]:
+	var melee := _make_equip_slot(Inventory.SLOT_MELEE, EQUIP_SLOT_SIZE)
+	for control: Control in [primary, armor, pistol, melee]:
 		control.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		_equip_row.add_child(control)
 

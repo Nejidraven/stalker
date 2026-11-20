@@ -21,6 +21,31 @@ const CLICK_SOUND := "res://assets/audio/empty_click.wav"
 const RELOAD_SOUND := "res://assets/audio/reload.wav"
 const MAX_HOLES := 40
 
+## Положение оружия в руках у модели (третье лицо): относительно кости Chest.
+## Рассчитано в Blender вместе с позами рук (низко / у плеча при прицеливании).
+const TP_LOW := {
+	"knife": Transform3D(Basis(Vector3(-0.99027, -0.00000, -0.13917), Vector3(0.05882, 0.90631, -0.41851), Vector3(0.12613, -0.42262, -0.89749)), Vector3(-0.20000, -0.12200, 0.32000)),
+	"rifle": Transform3D(Basis(Vector3(-0.81915, 0.00000, 0.57358), Vector3(0.18674, 0.94552, 0.26669), Vector3(-0.54233, 0.32557, -0.77452)), Vector3(-0.02310, -0.01440, 0.38370)),
+	"pistol": Transform3D(Basis(Vector3(-1.00000, 0.00000, 0.00000), Vector3(0.00000, 0.97815, 0.20791), Vector3(0.00000, 0.20791, -0.97815)), Vector3(-0.06000, 0.15800, 0.40000)),
+}
+## Нож в руке (третье лицо): положение относительно кости Hand.R, измерено в игре по позе idle_knife
+const TP_HAND := {
+	"knife": Transform3D(Basis(Vector3(-0.98220, 0.18177, -0.04737), Vector3(-0.13805, -0.86957, -0.47412), Vector3(-0.12736, -0.45914, 0.87919)), Vector3(0.01578, 0.04888, -0.00921)),
+}
+const TP_AIM := {
+	"knife": Transform3D(Basis(Vector3(-0.99027, -0.00000, -0.13917), Vector3(0.05882, 0.90631, -0.41851), Vector3(0.12613, -0.42262, -0.89749)), Vector3(-0.20000, -0.12200, 0.32000)),
+	"rifle": Transform3D(Basis(Vector3(-1.00000, 0.00000, 0.00000), Vector3(0.00000, 1.00000, 0.00000), Vector3(0.00000, 0.00000, -1.00000)), Vector3(-0.09000, 0.35000, 0.30000)),
+	"pistol": Transform3D(Basis(Vector3(-1.00000, 0.00000, 0.00000), Vector3(0.00000, 1.00000, 0.00000), Vector3(0.00000, 0.00000, -1.00000)), Vector3(-0.09000, 0.33000, 0.52000)),
+}
+
+## Прицельные приспособления в системе координат модели оружия (x вправо, y вверх, z назад):
+## [целик, мушка]. Взято с моделей: по ним оружие в прицеливании ставится так, чтобы
+## мушка была ровно в центре экрана, а пуля летела по линии «целик — мушка».
+const SIGHTS := {
+	"rifle": [Vector3(0.0, 0.0, 0.042), Vector3(0.0, 0.008, -0.393)],
+	"pistol": [Vector3(0.0, 0.0, 0.013), Vector3(0.0, -0.003, -0.187)],
+}
+
 enum Mode { SINGLE, AUTO }
 
 ## Положение «руки» относительно камеры-рычага (SpringArm3D), а не мира: так оружие
@@ -44,6 +69,8 @@ var _empty_notice_cd: float = 0.0
 var _holes: Array[Node3D] = []
 
 var _model_holder: Node3D
+var _tp_attach: BoneAttachment3D
+var _tp_model: Node3D
 var _muzzle: Node3D
 var _flash_light: OmniLight3D
 var _flash_quad: MeshInstance3D
@@ -58,6 +85,25 @@ var _base_fov: float = 75.0
 var _hands: Node3D
 var _aiming: bool = false
 var _aim_blend: float = 0.0
+var _tp_aim_blend: float = 0.0   # быстрый вход в прицел для модели от третьего лица
+var _stab_t: float = 0.0   # 1 — удар ножом только начался, 0 — закончен
+var _draw_t: float = 1.0   # 0 — оружие только достают, 1 — готово
+# Наклон/поворот ствола в расслабленной позе (градусы): дуло вниз, у автомата ещё и влево
+## Пистолет на бегу: опущен и уведён вправо (позиция в координатах груди, наклон, поворот в градусах)
+const TP_RUN := {"pistol": [Vector3(-0.20, -0.142, 0.22), 40.0, -25.0]}
+var _tp_run_blend: float = 0.0
+const TP_LOW_PITCH := {"rifle": 19.0, "pistol": 12.0, "knife": -25.0}
+const TP_LOW_YAW := {"rifle": 35.0, "pistol": 0.0, "knife": -8.0}
+const DRAW_TIME := {"rifle": 0.38, "pistol": 0.3, "knife": 0.3}
+# Путь оружия при доставании (координаты рига: x вбок, y вперёд-минус, z вверх; как в Blender-тексте gen_tp):
+# пистолет — из кармана, автомат — из-за спины. [старт, середина дуги, начальный наклон ствола в градусах]
+const DRAW_PATH := {
+	"pistol": [Vector3(-0.24, -0.02, 0.88), Vector3(-0.17, -0.24, 1.06), 85.0],
+	"knife": [Vector3(-0.26, -0.02, 0.92), Vector3(-0.24, -0.22, 1.04), 70.0],
+	"rifle": [Vector3(-0.22, 0.16, 1.55), Vector3(-0.30, -0.10, 1.45), -80.0],
+}
+# Доп. наклон ствола вверх при прицеливании (рад), пули при этом всё равно летят в центр
+const ADS_EXTRA_TILT := {"rifle": 0.06}
 var _sprint_blend: float = 0.0
 var _sway: Vector2 = Vector2.ZERO
 var _last_rot: Vector2 = Vector2.ZERO
@@ -87,6 +133,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_select_slot(1)
 	elif event.is_action_pressed("weapon_2"):
 		_select_slot(2)
+	elif event.is_action_pressed("weapon_3"):
+		_select_slot(3)
 	elif event.is_action_pressed("reload"):
 		_start_reload()
 	elif event.is_action_pressed("fire_mode"):
@@ -97,17 +145,20 @@ func _unhandled_input(event: InputEvent) -> void:
 ## оружие стоит на месте. При смене вида смещение плавно меняется.
 func _process(delta: float) -> void:
 	var arm := _player.get_node("SpringArm3D") as Node3D
-	var first_person: bool = _player.call("is_first_person")
+	var first_person: bool = _player.call("is_fp_settled")
 	var armed := current != null
 	var sprinting: bool = _player.call("is_sprinting")
 
 	# Прицеливание (ПКМ): не во время бега и перезарядки
-	var want_aim := armed and not _reloading and not sprinting \
+	var want_aim := armed and not (armed and current.melee) and not _reloading and not sprinting \
 		and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_action_pressed("aim")
 	if want_aim != _aiming:
 		_aiming = want_aim
 		aim_changed.emit(_aiming)
 	_aim_blend = move_toward(_aim_blend, 1.0 if _aiming else 0.0, delta * 8.0)
+	_tp_aim_blend = move_toward(_tp_aim_blend, 1.0 if _aiming else 0.0, delta * 7.0)
+	var run_gait: bool = float(_player.call("get_move_speed")) >= float(_player.get("anim_run_threshold"))
+	_tp_run_blend = move_toward(_tp_run_blend, 1.0 if (run_gait and not _aiming) else 0.0, delta * 5.0)
 	_sprint_blend = move_toward(_sprint_blend, 1.0 if (armed and sprinting) else 0.0, delta * 6.0)
 
 	# При прицеливании поворот мыши и шаг медленнее, обзор уже
@@ -121,10 +172,11 @@ func _process(delta: float) -> void:
 	_offset = _offset.lerp(fp_offset if first_person else tp_offset, minf(delta * 12.0, 1.0))
 	var offset := _offset
 	if armed and first_person:
-		offset = _offset.lerp(current.ads_offset, _aim_blend)
+		offset = _offset.lerp(_sight_ads_offset(), _aim_blend)
 	transform = arm.transform * Transform3D(Basis.IDENTITY, offset)
 
 	_update_weapon_motion(delta, arm, first_person)
+	_update_tp_weapon(first_person)
 
 	if _flash_time > 0.0:
 		_flash_time -= delta
@@ -149,6 +201,8 @@ func _update_weapon_motion(delta: float, arm: Node3D, first_person: bool) -> voi
 
 	if current == null:
 		return
+	_draw_t = move_toward(_draw_t, 1.0, delta / _draw_time())
+	var draw_k := 1.0 - smoothstep(0.0, 1.0, _draw_t)
 
 	# Покачивание при ходьбе и дыхание слабеют при прицеливании
 	var speed: float = _player.call("get_move_speed")
@@ -165,17 +219,31 @@ func _update_weapon_motion(delta: float, arm: Node3D, first_person: bool) -> voi
 		var progress := 1.0 - clampf(_reload_left / maxf(_reload_total, 0.01), 0.0, 1.0)
 		reload_k = sin(progress * PI)
 
+	_stab_t = move_toward(_stab_t, 0.0, delta / 0.35)
 	_kick = move_toward(_kick, 0.0, delta * 0.6)
 	_kick_rot = move_toward(_kick_rot, 0.0, delta * 0.5)
 
 	# Бег: ствол опущен и уведён в сторону
 	var sprint_off := Vector3(-0.06, -0.05, 0.05) * _sprint_blend
 	var reload_off := Vector3(-0.03, -0.14, 0.05) * reload_k
-	_model_holder.position = current.hold_offset + Vector3(0.0, 0.0, _kick) + bob + sprint_off + reload_off
+	var draw_off := Vector3(0.05, -0.32, 0.12) * draw_k
+	var stab_p := 1.0 - _stab_t   # 0..1 ход удара: замах -> укол -> возврат
+	var stab_k := 0.0
+	var stab_back := 0.0
+	if _stab_t > 0.0:
+		if stab_p < 0.3:
+			stab_back = smoothstep(0.0, 1.0, stab_p / 0.3)
+		elif stab_p < 0.5:
+			var q := smoothstep(0.0, 1.0, (stab_p - 0.3) / 0.2)
+			stab_back = 1.0 - q
+			stab_k = q
+		else:
+			stab_k = 1.0 - smoothstep(0.0, 1.0, (stab_p - 0.5) / 0.5)
+	_model_holder.position = current.hold_offset + Vector3(0.0, 0.0, _kick) + bob + sprint_off + reload_off + draw_off + Vector3(0.05, -0.03, -0.26) * stab_k + Vector3(0.06, 0.07, 0.10) * stab_back
 	_model_holder.rotation = Vector3(
-		_sway.x + _kick_rot - 0.35 * _sprint_blend - 0.35 * reload_k,
-		_sway.y + 0.55 * _sprint_blend,
-		0.5 * reload_k + clampf(-_sway.y * 0.6, -0.1, 0.1)
+		_sway.x + _kick_rot + deg_to_rad(current.fp_pitch_deg) - 0.25 * stab_k + 0.45 * stab_back - 0.35 * _sprint_blend - 0.35 * reload_k - 0.9 * draw_k + _ads_extra() - _sight_tilt() * _aim_blend,
+		_sway.y + 0.55 * _sprint_blend + 0.25 * draw_k,
+		0.5 * reload_k + 0.3 * draw_k + clampf(-_sway.y * 0.6, -0.1, 0.1)
 	)
 	if _hands != null and is_instance_valid(_hands):
 		_hands.visible = first_person   # руки видны только от первого лица
@@ -213,6 +281,13 @@ func _physics_process(delta: float) -> void:
 		return
 	if _player.call("is_sprinting"):
 		return   # на бегу оружие опущено, стрелять нельзя
+	if String(current.fp_pose) == "rifle" and not bool(_player.call("is_first_person")) and not (_aiming and _tp_aim_blend > 0.5):
+		return   # автомат от третьего лица в расслабленной позе: стрелять нельзя (пистолет в позе «наготове» можно)
+
+	if current.melee:
+		if Input.is_action_just_pressed("fire") and _cooldown <= 0.0:
+			_melee_attack()
+		return
 
 	var mode: int = _modes.get(current.id, Mode.SINGLE)
 	var wants_fire := Input.is_action_pressed("fire") if mode == Mode.AUTO else Input.is_action_just_pressed("fire")
@@ -239,7 +314,8 @@ func equip(weapon: Weapon) -> void:
 		_mags[weapon.id] = 0
 	if not _modes.has(weapon.id):
 		_modes[weapon.id] = Mode.AUTO if weapon.can_auto else Mode.SINGLE
-	_cooldown = 0.25   # короткая пауза: оружие доставали
+	_draw_t = 0.0
+	_cooldown = _draw_time()   # пока оружие достают, стрелять нельзя
 	_build_model()
 	weapon_changed.emit(weapon)
 	_emit_ammo()
@@ -249,6 +325,9 @@ func holster() -> void:
 	_cancel_reload()
 	current = null
 	_hands = null
+	if _tp_model != null and is_instance_valid(_tp_model):
+		_tp_model.queue_free()
+	_tp_model = null
 	if _aiming:
 		_aiming = false
 		aim_changed.emit(false)
@@ -258,6 +337,17 @@ func holster() -> void:
 				child.queue_free()
 		_model_holder.visible = false
 	weapon_changed.emit(null)
+
+
+## Узел, в котором лежит модель оружия: руки от первого лица привязываются к нему.
+func get_holder() -> Node3D:
+	return _model_holder
+
+
+## true, если у игрока есть руки модели (тогда старые руки-заглушки не показываются)
+func _has_arm_model() -> bool:
+	var arms := _player.get_node_or_null("FpArms")
+	return arms != null and bool(arms.call("is_ready_ok"))
 
 
 func _select_slot(slot: int) -> void:
@@ -324,10 +414,30 @@ func _fire_bullet() -> void:
 	# Луч начинается на уровне глаз игрока, чтобы не цеплять предметы позади него
 	var start := cam_xf.origin + forward * cam_xf.origin.distance_to(arm.global_position)
 
+	# В прицеливании пуля летит туда, куда смотрит само оружие (по линии прицела),
+	# а не в центр экрана: при качании и отдаче оружие чуть отстаёт от камеры
+	var base_dir := forward
+	var base_right := cam_xf.basis.x
+	var base_up := cam_xf.basis.y
+	if _aim_blend > 0.01 and _player.call("is_first_person") and _model_holder != null:
+		var holder_xf := _model_holder.global_transform
+		var weapon_dir := (-holder_xf.basis.z).normalized()
+		var sight_start := holder_xf.origin
+		var kind := String(current.fp_pose)
+		if SIGHTS.has(kind):
+			var rear: Vector3 = SIGHTS[kind][0]
+			var front: Vector3 = SIGHTS[kind][1]
+			sight_start = holder_xf * rear
+			weapon_dir = (holder_xf.basis * (Basis(Vector3.RIGHT, -_ads_extra()) * (front - rear))).normalized()
+		base_dir = forward.slerp(weapon_dir, _aim_blend).normalized()
+		start = start.lerp(sight_start, _aim_blend)
+		base_right = base_dir.cross(Vector3.UP).normalized()
+		base_up = base_right.cross(base_dir).normalized()
+
 	var cone := deg_to_rad(_current_spread())
 	var angle := randf() * TAU
 	var radius := sqrt(randf()) * tan(cone)
-	var dir := (forward + cam_xf.basis.x * cos(angle) * radius + cam_xf.basis.y * sin(angle) * radius).normalized()
+	var dir := (base_dir + base_right * cos(angle) * radius + base_up * sin(angle) * radius).normalized()
 	var end := start + dir * current.max_range
 
 	var query := PhysicsRayQueryParameters3D.create(start, end, 1)
@@ -345,14 +455,47 @@ func _fire_bullet() -> void:
 
 	# Отдача: камера подпрыгивает, оружие дёргается назад
 	_bloom = minf(_bloom + current.spread_deg * 0.4, current.spread_deg * 3.0)
-	_kick = minf(_kick + 0.04, 0.08)
 	var recoil_scale := lerpf(1.0, 0.6, _aim_blend)   # прицеливание смягчает отдачу
-	_kick_rot = minf(_kick_rot + 0.03 * recoil_scale, 0.12)
+	if String(current.fp_pose) == "pistol":
+		# пистолет подбрасывает вместе с кистями: откат назад и вверх, потом возвращается
+		_kick = minf(_kick + 0.05, 0.09)
+		_kick_rot = minf(_kick_rot + 0.10 * recoil_scale, 0.2)
+	else:
+		_kick = minf(_kick + 0.04, 0.08)
+		_kick_rot = minf(_kick_rot + 0.03 * recoil_scale, 0.12)
 	var pitch := current.recoil_pitch_deg * recoil_scale * randf_range(0.8, 1.2)
 	var yaw_dir := 1.0 if randf() < 0.5 else -1.0
 	_player.call("add_recoil", pitch, current.recoil_yaw_deg * recoil_scale * yaw_dir * randf())
 	_recoil_accum += pitch * 0.6   # 60% подъёма камера потом вернёт сама
 	_since_shot = 0.0
+
+
+## Удар ножом: короткий луч от камеры, урон как у пули, без следов от пуль.
+func _melee_attack() -> void:
+	_cooldown = 60.0 / maxf(current.fire_rate, 1.0)
+	_stab_t = 1.0
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return
+	var arm := _player.get_node("SpringArm3D") as Node3D
+	var cam_xf := camera.global_transform
+	var forward := -cam_xf.basis.z
+	var start := cam_xf.origin + forward * cam_xf.origin.distance_to(arm.global_position)
+	var query := PhysicsRayQueryParameters3D.create(start, start + forward * current.melee_range, 1)
+	query.exclude = [_player.get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return
+	var collider := hit["collider"] as Node
+	var point: Vector3 = hit["position"]
+	var normal: Vector3 = hit["normal"]
+	if collider != null and collider.has_method("apply_hit"):
+		var result: Variant = collider.call("apply_hit", current.damage, point, normal)
+		hit_confirmed.emit(result is bool and result)
+	elif collider != null and collider.has_method("take_damage"):
+		collider.call("take_damage", current.damage)
+		hit_confirmed.emit(false)
+	_spawn_sparks(point, normal, Color(0.9, 0.85, 0.7))
 
 
 func _apply_hit(hit: Dictionary) -> void:
@@ -380,7 +523,7 @@ func _reserve() -> int:
 
 
 func _start_reload() -> void:
-	if current == null or _reloading:
+	if current == null or _reloading or current.melee:
 		return
 	if int(_mags.get(current.id, 0)) >= current.magazine_size:
 		return
@@ -421,6 +564,9 @@ func _cancel_reload() -> void:
 
 func _emit_ammo() -> void:
 	if current == null:
+		return
+	if current.melee:
+		ammo_changed.emit(0, 0, "БЛИЖНИЙ БОЙ")
 		return
 	var mode: int = _modes.get(current.id, Mode.SINGLE)
 	var text := "ОЧЕРЕДЬ" if mode == Mode.AUTO else "ОДИНОЧНЫЕ"
@@ -494,11 +640,12 @@ func _build_model() -> void:
 		(node as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_model_holder.add_child(model)
 	_model_holder.visible = true
+	_build_tp_model()
 	_muzzle.position = current.muzzle_offset
 
 	# Временные руки: стоят в тех же координатах, что и модель оружия
 	_hands = null
-	if current.hands_path != "" and ResourceLoader.exists(current.hands_path):
+	if not _has_arm_model() and current.hands_path != "" and ResourceLoader.exists(current.hands_path):
 		if not _scene_cache.has(current.hands_path):
 			_scene_cache[current.hands_path] = load(current.hands_path)
 		var hands_scene := _scene_cache[current.hands_path] as PackedScene
@@ -602,6 +749,7 @@ func _setup_input_map() -> void:
 	var keys: Dictionary = {
 		"weapon_1": KEY_1,
 		"weapon_2": KEY_2,
+		"weapon_3": KEY_3,
 		"reload": KEY_R,
 		"fire_mode": KEY_B,
 	}
@@ -622,3 +770,127 @@ func _setup_input_map() -> void:
 		var aim_event := InputEventMouseButton.new()
 		aim_event.button_index = MOUSE_BUTTON_RIGHT
 		InputMap.action_add_event("aim", aim_event)
+
+
+# --- Оружие в руках у модели (третье лицо) --------------------------------
+
+## Копия оружия на кости груди: едет вместе с телом, руки в анимациях лежат на ней.
+func _build_tp_model() -> void:
+	if _tp_model != null and is_instance_valid(_tp_model):
+		_tp_model.queue_free()
+	_tp_model = null
+	var skeleton := _find_player_skeleton()
+	if skeleton == null:
+		return
+	if _tp_attach == null or not is_instance_valid(_tp_attach):
+		_tp_attach = BoneAttachment3D.new()
+		_tp_attach.name = "TpWeaponAttach"
+		skeleton.add_child(_tp_attach)
+		_tp_attach.bone_name = "Chest"
+	_tp_attach.bone_name = "Hand.R" if current.melee else "Chest"
+	var model: Node3D = null
+	if current.model_path != "" and _scene_cache.has(current.model_path):
+		model = (_scene_cache[current.model_path] as PackedScene).instantiate() as Node3D
+	if model == null:
+		return
+	for node in model.find_children("*", "GeometryInstance3D", true, false):
+		(node as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	_tp_attach.add_child(model)
+	_tp_model = model
+
+
+func _find_player_skeleton() -> Skeleton3D:
+	var mesh := _player.get_node_or_null("Mesh")
+	if mesh == null:
+		return null
+	return mesh.find_child("Skeleton3D", true, false) as Skeleton3D
+
+
+func _update_tp_weapon(first_person: bool) -> void:
+	if current == null:
+		if _tp_model != null and is_instance_valid(_tp_model):
+			_tp_model.queue_free()
+		_tp_model = null
+		return
+	if _tp_model == null or not is_instance_valid(_tp_model):
+		return
+	var kind := String(current.fp_pose)
+	if not TP_LOW.has(kind):
+		kind = "rifle"
+	_tp_model.visible = not first_person
+	_tp_model.transform = (TP_LOW[kind] as Transform3D).interpolate_with(TP_AIM[kind] as Transform3D, smoothstep(0.0, 1.0, _tp_aim_blend))
+	if TP_RUN.has(kind) and _tp_run_blend > 0.001:
+		var rr: Array = TP_RUN[kind]
+		var run_tf := Transform3D(Basis(Vector3.UP, deg_to_rad(float(rr[2]))) * Basis(Vector3.RIGHT, deg_to_rad(float(rr[1]))) * Basis(Vector3.UP, PI), rr[0] as Vector3)
+		_tp_model.transform = _tp_model.transform.interpolate_with(run_tf, smoothstep(0.0, 1.0, _tp_run_blend))
+	if _draw_t < 1.0 and DRAW_PATH.has(kind):
+		# то же движение, что в анимации draw_*: из кармана / из-за спины в позу «наготове»
+		var k := smoothstep(0.0, 1.0, _draw_t)
+		var low := TP_LOW[kind] as Transform3D
+		var pth: Array = DRAW_PATH[kind]
+		var r1 := Vector3(low.origin.x, -low.origin.z, low.origin.y + 1.242)   # положение в координатах рига
+		var ro: Vector3 = (1.0 - k) * (1.0 - k) * (pth[0] as Vector3) + 2.0 * k * (1.0 - k) * (pth[1] as Vector3) + k * k * r1
+		var pitch_low := float(TP_LOW_PITCH.get(kind, 0.0))
+		var yaw_low := float(TP_LOW_YAW.get(kind, 0.0)) * k
+		var pitch := lerpf(float(pth[2]), pitch_low, k)
+		_tp_model.transform = Transform3D(Basis(Vector3.UP, deg_to_rad(yaw_low)) * Basis(Vector3.RIGHT, deg_to_rad(pitch)) * Basis(Vector3.UP, PI), Vector3(ro.x, ro.z - 1.242, -ro.y))
+	# Отдача в третьем лице: оружие толкает назад и подбрасывает ствол (у автомата слабее)
+	var rk := 1.0 if kind == "pistol" else 0.55
+	var tpt := _tp_model.transform
+	tpt.origin += Vector3(0.0, 0.0, -_kick * 0.5 * rk + (0.14 * sin((1.0 - _stab_t) * PI) if _stab_t > 0.0 else 0.0))
+	tpt.basis = Basis(Vector3.RIGHT, -_kick_rot * 1.1 * rk) * tpt.basis
+	_tp_model.transform = tpt
+	if current.melee and TP_HAND.has(kind):
+		_tp_model.transform = TP_HAND[kind] as Transform3D
+	for child in _model_holder.get_children():
+		if child.is_in_group("weapon_model"):
+			(child as Node3D).visible = first_person
+
+
+	if not first_person:
+		# вспышка и звук выстрела идут от настоящего ствола
+		_model_holder.global_transform = _tp_model.global_transform
+
+
+# --- Прицеливание по мушке ----------------------------------------------------
+
+## Угол линии «целик — мушка» к оси оружия (рад). Оружие в прицеливании чуть
+## поворачивается на этот угол, чтобы линия прицела легла параллельно взгляду.
+func _sight_tilt() -> float:
+	if current == null:
+		return 0.0
+	var kind := String(current.fp_pose)
+	if not SIGHTS.has(kind):
+		return 0.0
+	var rear: Vector3 = SIGHTS[kind][0]
+	var front: Vector3 = SIGHTS[kind][1]
+	return atan2(front.y - rear.y, -(front.z - rear.z))
+
+
+## Смещение «руки» в прицеливании: целик встаёт точно на линию взгляда (по центру
+## экрана), глубина берётся из ads_offset оружия.
+func _sight_ads_offset() -> Vector3:
+	var ads := current.ads_offset
+	var kind := String(current.fp_pose)
+	if SIGHTS.has(kind):
+		var rear: Vector3 = SIGHTS[kind][0]
+		var rr := Basis(Vector3.RIGHT, -_sight_tilt()) * rear
+		ads.x = -rr.x - current.hold_offset.x
+		ads.y = -rr.y - current.hold_offset.y
+		# доп. наклон ствола поднимает мушку над перекрестием — опускаем оружие, чтобы верх мушки лёг на него
+		var full_extra := float(ADS_EXTRA_TILT.get(kind, 0.0))
+		var front: Vector3 = SIGHTS[kind][1]
+		ads.y -= sin(full_extra) * absf(front.z - rear.z) * 0.95
+	return ads
+
+
+func _draw_time() -> float:
+	if current == null:
+		return 0.5
+	return float(DRAW_TIME.get(String(current.fp_pose), DRAW_TIME["rifle"]))
+
+
+func _ads_extra() -> float:
+	if current == null:
+		return 0.0
+	return float(ADS_EXTRA_TILT.get(String(current.fp_pose), 0.0)) * _aim_blend

@@ -139,6 +139,10 @@ func _apply_weapon_ui() -> void:
 
 
 func _on_ammo_changed(in_magazine: int, reserve: int, mode_text: String) -> void:
+	if mode_text == "БЛИЖНИЙ БОЙ":
+		_ammo_label.text = " "
+		_mode_label.text = mode_text
+		return
 	_ammo_label.text = "%d / %d" % [in_magazine, reserve]
 	_ammo_label.add_theme_color_override(
 		"font_color", Color(0.95, 0.8, 0.3) if in_magazine > 0 else Color(0.9, 0.3, 0.22)

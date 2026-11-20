@@ -1,7 +1,8 @@
-[gd_resource type="Resource" script_class="Item" load_steps=3 format=3]
+[gd_resource type="Resource" script_class="Item" load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/items/item.gd" id="1_item"]
 [ext_resource type="Texture2D" path="res://assets/icons/antirad.png" id="2_icon"]
+[ext_resource type="PackedScene" path="res://assets/antirad.glb" id="3_model"]
 
 [resource]
 script = ExtResource("1_item")
@@ -15,3 +16,4 @@ max_stack = 3
 heal_amount = 0.0
 radiation_reduce = 40.0
 world_color = Color(0.85, 0.45, 0.1, 1)
+world_model = "res://assets/antirad.glb"
