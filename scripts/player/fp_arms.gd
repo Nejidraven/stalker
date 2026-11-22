@@ -18,6 +18,11 @@ var _weapons: Node3D
 var _spring_arm: Node3D
 var _anim: AnimationPlayer
 var _ok: bool = false
+var _skeleton: Skeleton3D
+var _left_bones: Array[int] = []
+var _hand_attach: BoneAttachment3D
+var _run_k: float = 0.0   # 1 — нож и бег: руки стоят на теле, как у третьего лица, а не на оружии
+var _left_hide: float = 0.0   # 1 — левая рука свёрнута (удар ножом: рука едет вместе с ножом и мелькала бы перед камерой)
 
 
 func _ready() -> void:
@@ -40,6 +45,12 @@ func _ready() -> void:
 	for node in model.find_children("*", "GeometryInstance3D", true, false):
 		(node as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_anim = model.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	_skeleton = model.find_child("Skeleton3D", true, false) as Skeleton3D
+	if _skeleton != null:
+		for bone_name in ["Shoulder.L", "UpperArm.L"]:
+			var bi := _skeleton.find_bone(bone_name)
+			if bi >= 0:
+				_left_bones.append(bi)
 	if _anim != null:
 		for anim_name: StringName in _anim.get_animation_list():
 			var anim := _anim.get_animation(anim_name)
@@ -81,11 +92,18 @@ func set_speed(speed: float) -> void:
 		_anim.speed_scale = speed
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	visible = _ok and _player.call("is_fp_settled") and float(_player.get("health")) > 0.0
 	if not visible:
 		return
 	var weapon: Variant = _weapons.get("current") if _weapons != null else null
+	_update_left_arm(weapon)
+	# Бег с ножом: руки двигаются как у тела (те же анимации, что от третьего лица), а не держат нож в кадре
+	var knife_run: bool = weapon != null and String(weapon.get("fp_pose")) == "knife" \
+			and float(_player.call("get_move_speed")) >= float(_player.get("anim_run_threshold"))
+	_run_k = move_toward(_run_k, 1.0 if knife_run else 0.0, delta * 5.0)
+	var yaw := Basis(Vector3.UP, _spring_arm.global_rotation.y)
+	var body_xf := Transform3D(yaw, _player.global_position + yaw * Vector3(0.0, 0.0, BODY_BACK))
 	if weapon != null:
 		# Руки стоят в системе координат оружия: тело модели сдвинуто так, чтобы камера
 		# оказалась там же, где при запекании поз
@@ -93,8 +111,40 @@ func _process(_delta: float) -> void:
 		var nominal_fp: Vector3 = _weapons.get("fp_offset")
 		var hold: Vector3 = weapon.get("hold_offset")
 		var local := Vector3(0.0, -EYE_HEIGHT, BODY_BACK) - nominal_fp - hold
-		global_transform = holder.global_transform * Transform3D(Basis.IDENTITY, local)
+		var weapon_xf: Transform3D = holder.global_transform * Transform3D(Basis.IDENTITY, local)
+		global_transform = weapon_xf.interpolate_with(body_xf, smoothstep(0.0, 1.0, _run_k)) if _run_k > 0.0 else weapon_xf
 	else:
 		# Без оружия: руки у тела, поворачиваются только по горизонтали, как настоящие
-		var yaw := Basis(Vector3.UP, _spring_arm.global_rotation.y)
-		global_transform = Transform3D(yaw, _player.global_position + yaw * Vector3(0.0, 0.0, BODY_BACK))
+		global_transform = body_xf
+
+
+## Кладёт оружие в правую руку модели (кость Hand.R) с заданным положением относительно кисти.
+func attach_weapon(model: Node3D, xf: Transform3D) -> bool:
+	if _skeleton == null or _skeleton.find_bone("Hand.R") < 0:
+		return false
+	if _hand_attach == null:
+		_hand_attach = BoneAttachment3D.new()
+		_hand_attach.bone_name = "Hand.R"
+		_skeleton.add_child(_hand_attach)
+	clear_weapon()
+	model.transform = xf
+	_hand_attach.add_child(model)
+	return true
+
+
+func clear_weapon() -> void:
+	if _hand_attach == null:
+		return
+	for child in _hand_attach.get_children():
+		child.queue_free()
+
+
+## Во время ударов ножом левая рука сворачивается в точку у плеча (за кадром), потом возвращается.
+func _update_left_arm(weapon: Variant) -> void:
+	if _skeleton == null or _left_bones.is_empty():
+		return
+	var want_hide := weapon != null and String(weapon.get("fp_pose")) == "knife" and (int(_weapons.get("_atk_step")) >= 0 or Vector3(_weapons.get("_atk_pos")).length() > 0.03)
+	_left_hide = move_toward(_left_hide, 1.0 if want_hide else 0.0, get_process_delta_time() * (30.0 if want_hide else 3.0))
+	var k := maxf(1.0 - _left_hide, 0.001)
+	for bi: int in _left_bones:
+		_skeleton.set_bone_pose_scale(bi, Vector3(k, k, k))

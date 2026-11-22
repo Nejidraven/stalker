@@ -30,7 +30,7 @@ const TP_LOW := {
 }
 ## Нож в руке (третье лицо): положение относительно кости Hand.R, измерено в игре по позе idle_knife
 const TP_HAND := {
-	"knife": Transform3D(Basis(Vector3(-0.98220, 0.18177, -0.04737), Vector3(-0.13805, -0.86957, -0.47412), Vector3(-0.12736, -0.45914, 0.87919)), Vector3(0.01578, 0.04888, -0.00921)),
+	"knife": Transform3D(Basis(Vector3(-0.99125, -0.02371, -0.12984), Vector3(0.03460, -0.99601, -0.08224), Vector3(-0.12736, -0.08601, 0.98812)), Vector3(0.01500, 0.00400, 0.01500)),
 }
 const TP_AIM := {
 	"knife": Transform3D(Basis(Vector3(-0.99027, -0.00000, -0.13917), Vector3(0.05882, 0.90631, -0.41851), Vector3(0.12613, -0.42262, -0.89749)), Vector3(-0.20000, -0.12200, 0.32000)),
@@ -86,7 +86,51 @@ var _hands: Node3D
 var _aiming: bool = false
 var _aim_blend: float = 0.0
 var _tp_aim_blend: float = 0.0   # быстрый вход в прицел для модели от третьего лица
-var _stab_t: float = 0.0   # 1 — удар ножом только начался, 0 — закончен
+## Комбо ножом: 1) режущий слева, 2) режущий справа, 3) колющий. Длительность хода, секунды
+const ATK_DUR := [0.46, 0.46, 0.55]
+## Доля хода, на которой удар наносит урон
+const ATK_HIT := [0.52, 0.48, 0.46]
+## Множитель урона: режущие слабее, колющий сильнее
+const ATK_DMG := [0.8, 0.8, 1.5]
+const ATK_CHAIN := 0.8      # после этой доли хода можно начинать следующий удар
+const COMBO_WINDOW := 0.5   # сколько секунд после удара комбо ещё не сбрасывается
+## Движение ножа от первого лица: [доля хода, x, y, z (сдвиг), наклон, поворот, крен (рад)]
+## Нож стоит клинком вверх: «поворот» разворачивает лезвие (влево/вправо), «наклон» отгибает кисть
+const ATK_FP := [
+	[   # режущий слева: замах вправо, взмах поперёк тела, выход влево (от камеры не ближе исходного, иначе клинок мелькает перед глазами)
+		[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		[0.28, 0.20, 0.03, -0.02, -0.10, 0.20, -0.25],
+		[0.52, -0.04, 0.0, -0.16, -0.05, 0.30, 0.15],
+		[0.72, -0.22, -0.03, -0.10, 0.0, 0.40, 0.30],
+		[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+	],
+	[   # режущий справа: замах влево, взмах обратно, выход вправо
+		[0.0, -0.22, -0.03, -0.10, 0.0, 0.40, 0.30],
+		[0.22, -0.24, 0.0, -0.04, -0.08, 0.35, 0.25],
+		[0.48, 0.0, 0.0, -0.16, -0.05, -0.25, -0.15],
+		[0.70, 0.22, -0.03, -0.10, 0.0, -0.35, -0.30],
+		[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+	],
+	[   # колющий: кисть отгибается назад, потом наклоняется вперёд вместе с уколом
+		[0.0, 0.22, -0.03, -0.10, 0.0, -0.35, -0.30],
+		[0.28, 0.06, 0.04, -0.02, 0.12, 0.0, 0.0],
+		[0.46, 0.05, -0.03, -0.30, -0.65, 0.0, 0.0],
+		[0.64, 0.04, -0.02, -0.22, -0.45, 0.0, 0.0],
+		[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+	],
+]
+## От первого лица нож повёрнут вокруг хвата клинком вверх (градусы); руки запечены под этот же угол (gen_knife)
+const KNIFE_FP_PITCH := 60.0
+const KNIFE_FP_PIVOT := Vector3(0.0004, -0.0434, -0.0168)   # точка хвата в координатах модели ножа
+var _atk_step: int = -1      # какой удар сейчас идёт (-1 — никакой)
+var _atk_p: float = 1.0      # ход удара 0..1
+var _atk_serial: int = 0     # растёт с каждым ударом: по нему модель от третьего лица включает анимацию
+var _atk_hit_done: bool = true
+var _atk_buffer: float = 0.0 # нажатие, сделанное чуть раньше, чем можно бить
+var _combo_next: int = 0
+var _combo_left: float = 0.0
+var _atk_pos: Vector3 = Vector3.ZERO
+var _atk_rot: Vector3 = Vector3.ZERO
 var _draw_t: float = 1.0   # 0 — оружие только достают, 1 — готово
 # Наклон/поворот ствола в расслабленной позе (градусы): дуло вниз, у автомата ещё и влево
 ## Пистолет на бегу: опущен и уведён вправо (позиция в координатах груди, наклон, поворот в градусах)
@@ -219,7 +263,15 @@ func _update_weapon_motion(delta: float, arm: Node3D, first_person: bool) -> voi
 		var progress := 1.0 - clampf(_reload_left / maxf(_reload_total, 0.01), 0.0, 1.0)
 		reload_k = sin(progress * PI)
 
-	_stab_t = move_toward(_stab_t, 0.0, delta / 0.35)
+	var atk_target := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+	if _atk_step >= 0:
+		_atk_p = minf(_atk_p + delta / float(ATK_DUR[_atk_step]), 1.0)
+		atk_target = _atk_sample(ATK_FP[_atk_step], _atk_p)
+		if _atk_p >= 1.0:
+			_atk_step = -1
+	var atk_k := minf(delta * 16.0, 1.0)   # одна скорость и во время удара, и после него: без рывка в конце
+	_atk_pos = _atk_pos.lerp(Vector3(atk_target[0], atk_target[1], atk_target[2]), atk_k)
+	_atk_rot = _atk_rot.lerp(Vector3(atk_target[3], atk_target[4], atk_target[5]), atk_k)
 	_kick = move_toward(_kick, 0.0, delta * 0.6)
 	_kick_rot = move_toward(_kick_rot, 0.0, delta * 0.5)
 
@@ -227,23 +279,13 @@ func _update_weapon_motion(delta: float, arm: Node3D, first_person: bool) -> voi
 	var sprint_off := Vector3(-0.06, -0.05, 0.05) * _sprint_blend
 	var reload_off := Vector3(-0.03, -0.14, 0.05) * reload_k
 	var draw_off := Vector3(0.05, -0.32, 0.12) * draw_k
-	var stab_p := 1.0 - _stab_t   # 0..1 ход удара: замах -> укол -> возврат
-	var stab_k := 0.0
-	var stab_back := 0.0
-	if _stab_t > 0.0:
-		if stab_p < 0.3:
-			stab_back = smoothstep(0.0, 1.0, stab_p / 0.3)
-		elif stab_p < 0.5:
-			var q := smoothstep(0.0, 1.0, (stab_p - 0.3) / 0.2)
-			stab_back = 1.0 - q
-			stab_k = q
-		else:
-			stab_k = 1.0 - smoothstep(0.0, 1.0, (stab_p - 0.5) / 0.5)
-	_model_holder.position = current.hold_offset + Vector3(0.0, 0.0, _kick) + bob + sprint_off + reload_off + draw_off + Vector3(0.05, -0.03, -0.26) * stab_k + Vector3(0.06, 0.07, 0.10) * stab_back
+	var sway_k := 2.5 if current.melee else 1.0   # нож заметнее реагирует на поворот камеры
+	var sway_pos := Vector3(-_sway.y * 0.35, _sway.x * 0.35, 0.0) if current.melee else Vector3.ZERO
+	_model_holder.position = current.hold_offset + sway_pos + Vector3(0.0, 0.0, _kick) + bob + sprint_off + reload_off + draw_off + _atk_pos
 	_model_holder.rotation = Vector3(
-		_sway.x + _kick_rot + deg_to_rad(current.fp_pitch_deg) - 0.25 * stab_k + 0.45 * stab_back - 0.35 * _sprint_blend - 0.35 * reload_k - 0.9 * draw_k + _ads_extra() - _sight_tilt() * _aim_blend,
-		_sway.y + 0.55 * _sprint_blend + 0.25 * draw_k,
-		0.5 * reload_k + 0.3 * draw_k + clampf(-_sway.y * 0.6, -0.1, 0.1)
+		_sway.x * sway_k + _kick_rot + deg_to_rad(current.fp_pitch_deg) + _atk_rot.x - 0.35 * _sprint_blend - 0.35 * reload_k - 0.9 * draw_k + _ads_extra() - _sight_tilt() * _aim_blend,
+		_sway.y * sway_k + 0.55 * _sprint_blend + 0.25 * draw_k + _atk_rot.y,
+		0.5 * reload_k + 0.3 * draw_k + clampf(-_sway.y * 0.6 * sway_k, -0.25, 0.25) + _atk_rot.z
 	)
 	if _hands != null and is_instance_valid(_hands):
 		_hands.visible = first_person   # руки видны только от первого лица
@@ -261,6 +303,12 @@ func _current_spread() -> float:
 
 func _physics_process(delta: float) -> void:
 	_cooldown = maxf(_cooldown - delta, 0.0)
+	_combo_left = maxf(_combo_left - delta, 0.0)
+	_atk_buffer = maxf(_atk_buffer - delta, 0.0)
+	# Урон наносится в момент взмаха, а не при нажатии
+	if _atk_step >= 0 and not _atk_hit_done and _atk_p >= float(ATK_HIT[_atk_step]):
+		_atk_hit_done = true
+		_melee_hit(_atk_step)
 
 	# Часть отдачи камера возвращает сама, если стрельба прекратилась
 	_since_shot += delta
@@ -285,7 +333,10 @@ func _physics_process(delta: float) -> void:
 		return   # автомат от третьего лица в расслабленной позе: стрелять нельзя (пистолет в позе «наготове» можно)
 
 	if current.melee:
-		if Input.is_action_just_pressed("fire") and _cooldown <= 0.0:
+		if Input.is_action_just_pressed("fire"):
+			_atk_buffer = 0.3   # нажатие чуть раньше времени не пропадает, а ждёт следующего удара
+		if _atk_buffer > 0.0 and _cooldown <= 0.0:
+			_atk_buffer = 0.0
 			_melee_attack()
 		return
 
@@ -321,7 +372,14 @@ func equip(weapon: Weapon) -> void:
 	_emit_ammo()
 
 
+func _clear_hand_weapon() -> void:
+	var arms := _player.get_node_or_null("FpArms")
+	if arms != null and arms.has_method("clear_weapon"):
+		arms.call("clear_weapon")
+
+
 func holster() -> void:
+	_clear_hand_weapon()
 	_cancel_reload()
 	current = null
 	_hands = null
@@ -470,32 +528,91 @@ func _fire_bullet() -> void:
 	_since_shot = 0.0
 
 
-## Удар ножом: короткий луч от камеры, урон как у пули, без следов от пуль.
+## Следующий удар комбо: режущий слева -> режущий справа -> колющий.
 func _melee_attack() -> void:
-	_cooldown = 60.0 / maxf(current.fire_rate, 1.0)
-	_stab_t = 1.0
+	var step := _combo_next if _combo_left > 0.0 else 0
+	_combo_next = (step + 1) % 3
+	_atk_step = step
+	_atk_p = 0.0
+	_atk_hit_done = false
+	_atk_serial += 1
+	_cooldown = float(ATK_DUR[step]) * ATK_CHAIN
+	_combo_left = float(ATK_DUR[step]) + COMBO_WINDOW
+
+
+func atk_duration(step: int) -> float:
+	return float(ATK_DUR[clampi(step, 0, ATK_DUR.size() - 1)])
+
+
+## Попадание удара: режущие бьют веером из трёх лучей, колющий — одним, но дальше.
+func _melee_hit(step: int) -> void:
 	var camera := get_viewport().get_camera_3d()
-	if camera == null:
+	if camera == null or current == null:
 		return
 	var arm := _player.get_node("SpringArm3D") as Node3D
 	var cam_xf := camera.global_transform
 	var forward := -cam_xf.basis.z
 	var start := cam_xf.origin + forward * cam_xf.origin.distance_to(arm.global_position)
-	var query := PhysicsRayQueryParameters3D.create(start, start + forward * current.melee_range, 1)
-	query.exclude = [_player.get_rid()]
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	if hit.is_empty():
+	var dirs: Array[Vector3] = [forward]
+	if step < 2:
+		dirs.append(forward.rotated(cam_xf.basis.y, 0.5))
+		dirs.append(forward.rotated(cam_xf.basis.y, -0.5))
+	var reach := current.melee_range + (0.25 if step == 2 else 0.0)
+	var best := {}
+	var best_dist := INF
+	for dir: Vector3 in dirs:
+		var query := PhysicsRayQueryParameters3D.create(start, start + dir * reach, 1)
+		query.exclude = [_player.get_rid()]
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		if hit.is_empty():
+			continue
+		var d := start.distance_to(hit["position"] as Vector3)
+		if d < best_dist:
+			best_dist = d
+			best = hit
+	if best.is_empty():
 		return
-	var collider := hit["collider"] as Node
-	var point: Vector3 = hit["position"]
-	var normal: Vector3 = hit["normal"]
+	var collider := best["collider"] as Node
+	var point: Vector3 = best["position"]
+	var normal: Vector3 = best["normal"]
+	var dmg := current.damage * float(ATK_DMG[step])
 	if collider != null and collider.has_method("apply_hit"):
-		var result: Variant = collider.call("apply_hit", current.damage, point, normal)
+		var result: Variant = collider.call("apply_hit", dmg, point, normal)
 		hit_confirmed.emit(result is bool and result)
 	elif collider != null and collider.has_method("take_damage"):
-		collider.call("take_damage", current.damage)
+		collider.call("take_damage", dmg)
 		hit_confirmed.emit(false)
 	_spawn_sparks(point, normal, Color(0.9, 0.85, 0.7))
+
+
+## Кривая Эрмита по ключам [доля, 6 значений]: плавное движение без остановок на ключах.
+func _atk_sample(keys: Array, p: float) -> Array:
+	var n := keys.size()
+	if p <= float(keys[0][0]):
+		return (keys[0] as Array).slice(1)
+	if p >= float(keys[n - 1][0]):
+		return (keys[n - 1] as Array).slice(1)
+	var i := 0
+	while i < n - 2 and float(keys[i + 1][0]) <= p:
+		i += 1
+	var t0 := float(keys[i][0])
+	var t1 := float(keys[i + 1][0])
+	var h := t1 - t0
+	var u := (p - t0) / h
+	var u2 := u * u
+	var u3 := u2 * u
+	var out: Array = []
+	for c in range(1, 7):
+		var p0 := float(keys[i][c])
+		var p1 := float(keys[i + 1][c])
+		var m0 := 0.0
+		var m1 := 0.0
+		if i > 0:
+			m0 = (p1 - float(keys[i - 1][c])) / (t1 - float(keys[i - 1][0])) * h
+		if i + 1 < n - 1:
+			m1 = (float(keys[i + 2][c]) - p0) / (float(keys[i + 2][0]) - t0) * h
+		out.append((2.0 * u3 - 3.0 * u2 + 1.0) * p0 + (u3 - 2.0 * u2 + u) * m0 + (-2.0 * u3 + 3.0 * u2) * p1 + (u3 - u2) * m1)
+	return out
 
 
 func _apply_hit(hit: Dictionary) -> void:
@@ -617,6 +734,7 @@ func _make_audio(stream: AudioStream, volume_db: float) -> AudioStreamPlayer3D:
 
 
 func _build_model() -> void:
+	_clear_hand_weapon()
 	for child in _model_holder.get_children():
 		if child.is_in_group("weapon_model"):
 			child.queue_free()
@@ -638,7 +756,19 @@ func _build_model() -> void:
 	model.add_to_group("weapon_model")
 	for node in model.find_children("*", "GeometryInstance3D", true, false):
 		(node as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_model_holder.add_child(model)
+	_polish_knife(model)
+	_polish_gun(model, current.model_path)
+	var in_hand := false
+	if current.melee:
+		# Нож от первого лица лежит в руке модели так же, как у третьего лица (TP_HAND): привязан к кости кисти
+		var arms := _player.get_node_or_null("FpArms")
+		if arms != null and bool(arms.call("is_ready_ok")):
+			in_hand = bool(arms.call("attach_weapon", model, TP_HAND[String(current.fp_pose)]))
+		if not in_hand:
+			var tilt := Basis(Vector3.RIGHT, deg_to_rad(KNIFE_FP_PITCH))
+			model.transform = Transform3D(tilt, KNIFE_FP_PIVOT - tilt * KNIFE_FP_PIVOT)
+	if not in_hand:
+		_model_holder.add_child(model)
 	_model_holder.visible = true
 	_build_tp_model()
 	_muzzle.position = current.muzzle_offset
@@ -795,8 +925,51 @@ func _build_tp_model() -> void:
 		return
 	for node in model.find_children("*", "GeometryInstance3D", true, false):
 		(node as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	_polish_knife(model)
+	_polish_gun(model, current.model_path)
 	_tp_attach.add_child(model)
 	_tp_model = model
+
+
+## Лезвие ножа блестит как сталь: гладкая поверхность, высокая металличность, светлее исходной текстуры.
+## Материал knife_blade задан в knife.glb; рукоять остаётся матовой.
+func _polish_knife(model: Node) -> void:
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		for i in mi.mesh.get_surface_count():
+			var mat := mi.mesh.surface_get_material(i) as StandardMaterial3D
+			if mat != null and mat.resource_name == "knife_blade":
+				mat.metallic = 0.95
+				mat.metallic_specular = 1.0
+				mat.roughness = 0.16
+				mat.albedo_color = Color(1.9, 1.9, 1.95)
+
+
+## Металл огнестрельного оружия блестит: маска металла/шероховатости (R = металл, G = шероховатость)
+## построена по текстуре: серые части — сталь, дерево и пластик остаются матовыми.
+func _polish_gun(model: Node, model_path: String) -> void:
+	var orm_path := model_path.replace(".glb", "_orm.png")
+	if not ResourceLoader.exists(orm_path):
+		return
+	var orm := load(orm_path) as Texture2D
+	if orm == null:
+		return
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		for i in mi.mesh.get_surface_count():
+			var mat := mi.mesh.surface_get_material(i) as StandardMaterial3D
+			if mat != null and mat.metallic_texture == null:
+				mat.metallic = 1.0
+				mat.metallic_texture = orm
+				mat.metallic_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
+				mat.metallic_specular = 0.9
+				mat.roughness = 1.0
+				mat.roughness_texture = orm
+				mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
 
 
 func _find_player_skeleton() -> Skeleton3D:
@@ -837,7 +1010,7 @@ func _update_tp_weapon(first_person: bool) -> void:
 	# Отдача в третьем лице: оружие толкает назад и подбрасывает ствол (у автомата слабее)
 	var rk := 1.0 if kind == "pistol" else 0.55
 	var tpt := _tp_model.transform
-	tpt.origin += Vector3(0.0, 0.0, -_kick * 0.5 * rk + (0.14 * sin((1.0 - _stab_t) * PI) if _stab_t > 0.0 else 0.0))
+	tpt.origin += Vector3(0.0, 0.0, -_kick * 0.5 * rk + 0.0)
 	tpt.basis = Basis(Vector3.RIGHT, -_kick_rot * 1.1 * rk) * tpt.basis
 	_tp_model.transform = tpt
 	if current.melee and TP_HAND.has(kind):

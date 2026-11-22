@@ -86,7 +86,7 @@ var _bob_blend: float = 0.0
 var _anim: AnimationPlayer
 var _draw_anim: AnimationPlayer   # второй плеер: доставание двигает только руки, ноги идут как шли
 var _draw_prev_t: float = 1.0
-var _stab_prev: float = 0.0
+var _atk_serial_prev: int = 0
 var _head_aim: SkeletonModifier3D
 var _aim_cam: float = 0.0
 var _fp_arms: Node3D
@@ -426,9 +426,11 @@ func _setup_draw_layer() -> void:
 			if not keep:
 				anim.remove_track(i)
 		lib.add_animation("draw_" + kind, anim)
-	# Атака ножом: кроме рук работают позвоночник, грудь, шея и голова (корпус поворачивается в ударе)
-	var atk_src := _anim_name("attack_knife")
-	if atk_src != "":
+	# Комбо ножом (слева, справа, укол): кроме рук работают позвоночник, грудь, шея и голова
+	for atk_name: String in ["attack_knife_l", "attack_knife_r", "attack_knife"]:
+		var atk_src := _anim_name(atk_name)
+		if atk_src == "":
+			continue
 		var atk := _anim.get_animation(atk_src).duplicate() as Animation
 		atk.loop_mode = Animation.LOOP_NONE
 		var atk_bones := arm_bones + ["Spine", "Chest", "Neck", "Head"]
@@ -441,7 +443,7 @@ func _setup_draw_layer() -> void:
 					break
 			if not keep:
 				atk.remove_track(i)
-		lib.add_animation("attack_knife", atk)
+		lib.add_animation(atk_name, atk)
 	_draw_anim = AnimationPlayer.new()
 	_draw_anim.name = "DrawLayer"
 	_anim.get_parent().add_child(_draw_anim)
@@ -458,19 +460,22 @@ func _update_draw_layer() -> void:
 		if _draw_anim.is_playing():
 			_draw_anim.stop()
 		return
-	# Удар ножом: играем анимацию атаки (замах, укол, возврат) поверх ходьбы
-	var stab := float(_weapons.get("_stab_t"))
-	if stab >= 0.99 and _stab_prev < 0.9 and _draw_anim.has_animation("attack_knife"):
-		_draw_anim.play("attack_knife", 0.05)
-		_draw_anim.speed_scale = _draw_anim.current_animation_length / 0.35
-	_stab_prev = stab
+	# Удар ножом: по счётчику ударов включаем нужную анимацию комбо поверх ходьбы
+	var serial := int(_weapons.get("_atk_serial"))
+	if serial != _atk_serial_prev:
+		_atk_serial_prev = serial
+		var step := clampi(int(_weapons.get("_atk_step")), 0, 2)
+		var atk_anim: String = ["attack_knife_l", "attack_knife_r", "attack_knife"][step]
+		if _draw_anim.has_animation(atk_anim):
+			_draw_anim.play(atk_anim, 0.08)
+			_draw_anim.speed_scale = _draw_anim.current_animation_length / maxf(float(_weapons.call("atk_duration", step)), 0.05)
 	var t := float(_weapons.get("_draw_t"))
 	var anim_name := "draw_" + String(weapon.get("fp_pose"))
 	if t < 1.0 and (t < _draw_prev_t or not _draw_anim.is_playing()) and _draw_anim.has_animation(anim_name):
 		if t < _draw_prev_t:   # только что достали (или сменили) оружие
 			_draw_anim.play(anim_name)
 			_draw_anim.speed_scale = _draw_anim.current_animation_length / maxf(float(_weapons.call("_draw_time")), 0.05)
-	elif t >= 1.0 and _draw_anim.is_playing() and _draw_anim.current_animation != "attack_knife":
+	elif t >= 1.0 and _draw_anim.is_playing() and not String(_draw_anim.current_animation).begins_with("attack_knife"):
 		_draw_anim.stop()
 	_draw_prev_t = t
 
