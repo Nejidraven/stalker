@@ -1,4 +1,4 @@
-[gd_scene load_steps=25 format=3]
+[gd_scene load_steps=27 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/terrain.gd" id="1_terrain"]
 [ext_resource type="Script" path="res://scripts/world/environment_spawner.gd" id="2_spawner"]
@@ -19,6 +19,9 @@
 [ext_resource type="Resource" path="res://resources/items/pistol.tres" id="17_pistol"]
 [ext_resource type="Resource" path="res://resources/items/ak74.tres" id="18_ak"]
 [ext_resource type="Resource" path="res://resources/items/ammo_9x18.tres" id="19_ammo9"]
+[ext_resource type="Resource" path="res://resources/items/machine_gun.tres" id="20_mg"]
+[ext_resource type="Resource" path="res://resources/items/shotgun.tres" id="21_sg"]
+[ext_resource type="Resource" path="res://resources/items/ammo_12.tres" id="22_ammo12"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_overcast"]
 sky_top_color = Color(0.36, 0.38, 0.42, 1)
@@ -106,6 +109,19 @@ amount = 32
 [node name="Rifle" parent="Pickups" instance=ExtResource("6_pickup")]
 position = Vector3(1.5, 0, -3)
 item = ExtResource("18_ak")
+
+[node name="MachineGun" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(3.5, 0, -3)
+item = ExtResource("20_mg")
+
+[node name="Shotgun" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(5.5, 0, -3)
+item = ExtResource("21_sg")
+
+[node name="Ammo12" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(7, 0, -3)
+item = ExtResource("22_ammo12")
+amount = 24
 
 [node name="ShootingRange" type="Node3D" parent="."]
 

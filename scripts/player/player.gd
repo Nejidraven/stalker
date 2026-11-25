@@ -86,6 +86,8 @@ var _bob_blend: float = 0.0
 var _anim: AnimationPlayer
 var _draw_anim: AnimationPlayer   # второй плеер: доставание двигает только руки, ноги идут как шли
 var _draw_prev_t: float = 1.0
+var _reload_serial_prev: int = 0
+var _sg_prev_active: bool = false
 var _atk_serial_prev: int = 0
 var _head_aim: SkeletonModifier3D
 var _aim_cam: float = 0.0
@@ -410,7 +412,25 @@ func _setup_animation() -> void:
 func _setup_draw_layer() -> void:
 	var arm_bones := ["Shoulder", "UpperArm", "LowerArm", "Hand", "Thumb", "Index", "Middle", "Ring", "Pinky"]
 	var lib := AnimationLibrary.new()
-	for kind in ["rifle", "pistol", "knife"]:
+	for kind in ["rifle", "machine_gun", "pistol", "shotgun"]:
+		var rl_src := _anim_name("reload_" + kind)
+		if rl_src == "":
+			continue
+		var rl := _anim.get_animation(rl_src).duplicate() as Animation
+		rl.loop_mode = Animation.LOOP_NONE
+		for i in range(rl.get_track_count() - 1, -1, -1):
+			var rl_bone := String(rl.track_get_path(i).get_concatenated_subnames())
+			var rl_keep := false
+			for prefix: String in arm_bones:
+				if rl_bone.begins_with(prefix):
+					rl_keep = true
+					break
+			if not rl_keep:
+				rl.remove_track(i)
+		lib.add_animation("reload_" + kind, rl)
+		if kind == "shotgun":
+			lib.add_animation("reload_shotgun_end", rl.duplicate())
+	for kind in ["rifle", "machine_gun", "pistol", "shotgun", "knife"]:
 		var src_name := _anim_name("draw_" + kind)
 		if src_name == "":
 			continue
@@ -469,13 +489,49 @@ func _update_draw_layer() -> void:
 		if _draw_anim.has_animation(atk_anim):
 			_draw_anim.play(atk_anim, 0.08)
 			_draw_anim.speed_scale = _draw_anim.current_animation_length / maxf(float(_weapons.call("atk_duration", step)), 0.05)
+	var rl_serial := int(_weapons.get("_reload_serial"))
+	var reloading := bool(_weapons.get("_reloading"))
+	var sg_active := bool(_weapons.get("_sg_active"))
+	if sg_active:
+		# дробовик: время анимации ведёт оружие (вход, потом цикл по патронам)
+		if _draw_anim.has_animation("reload_shotgun"):
+			if _draw_anim.current_animation != "reload_shotgun":
+				_draw_anim.play("reload_shotgun", 0.0)
+			_draw_anim.speed_scale = 0.0
+			var sg_u := float(_weapons.call("sg_anim_u"))
+			_draw_anim.seek(sg_u * _draw_anim.get_animation("reload_shotgun").length, true)
+		if _fp_arms != null:
+			_fp_arms.call("seek_reload", "shotgun", float(_weapons.call("sg_anim_u")))
+	elif _sg_prev_active and _draw_anim.has_animation("reload_shotgun_end"):
+		# конец зарядки: рука плавно возвращается на цевьё
+		_draw_anim.play("reload_shotgun_end", 0.25)
+		_draw_anim.seek(_draw_anim.get_animation("reload_shotgun_end").length * 0.85, false)
+		_draw_anim.speed_scale = 1.0
+	_sg_prev_active = sg_active
+	if rl_serial != _reload_serial_prev and not sg_active and String(weapon.get("fp_pose")) != "shotgun":
+		_reload_serial_prev = rl_serial
+		var rl_name := "reload_" + String(weapon.get("fp_pose"))
+		if reloading and _draw_anim.has_animation(rl_name):
+			_draw_anim.play(rl_name, 0.12)
+			_draw_anim.speed_scale = _draw_anim.current_animation_length / maxf(float(_weapons.get("_reload_total")), 0.1)
+			if _fp_arms != null:
+				_fp_arms.call("start_reload", String(weapon.get("fp_pose")), float(_weapons.get("_reload_total")))
+	if not reloading and not sg_active:
+		if _fp_arms != null:
+			_fp_arms.call("end_reload")
+		var rl_cur := String(_draw_anim.current_animation)
+		if rl_cur.ends_with("_end"):
+			if not _draw_anim.is_playing():
+				_draw_anim.stop()
+		elif _draw_anim.is_playing() and rl_cur.begins_with("reload_"):
+			_draw_anim.stop()
 	var t := float(_weapons.get("_draw_t"))
 	var anim_name := "draw_" + String(weapon.get("fp_pose"))
 	if t < 1.0 and (t < _draw_prev_t or not _draw_anim.is_playing()) and _draw_anim.has_animation(anim_name):
 		if t < _draw_prev_t:   # только что достали (или сменили) оружие
 			_draw_anim.play(anim_name)
 			_draw_anim.speed_scale = _draw_anim.current_animation_length / maxf(float(_weapons.call("_draw_time")), 0.05)
-	elif t >= 1.0 and _draw_anim.is_playing() and not String(_draw_anim.current_animation).begins_with("attack_knife"):
+	elif t >= 1.0 and _draw_anim.is_playing() and not String(_draw_anim.current_animation).begins_with("attack_knife") and not String(_draw_anim.current_animation).begins_with("reload_"):
 		_draw_anim.stop()
 	_draw_prev_t = t
 

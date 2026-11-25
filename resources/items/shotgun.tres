@@ -1,0 +1,37 @@
+[gd_resource type="Resource" script_class="Weapon" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/weapon.gd" id="1_weapon"]
+[ext_resource type="Texture2D" path="res://assets/icons/ak74.png" id="2_icon"]
+
+[resource]
+script = ExtResource("1_weapon")
+slot = 2
+ammo_id = &"ammo_12"
+damage = 13.0
+pellets = 8
+fire_rate = 80.0
+magazine_size = 6
+reload_time = 4.2
+spread_deg = 3.2
+max_range = 60.0
+recoil_pitch_deg = 4.5
+recoil_yaw_deg = 1.2
+can_single = true
+can_auto = false
+model_path = "res://assets/shotgun.glb"
+fp_pose = &"shotgun"
+hold_offset = Vector3(-0.03, 0.03, -0.23)
+muzzle_offset = Vector3(0, 0.03, -0.4)
+hands_path = "res://assets/hands_rifle.glb"
+ads_offset = Vector3(0.03, -0.06, -0.17)
+ads_fov = 58.0
+shot_sound_path = "res://assets/audio/rifle_shot.wav"
+shot_volume_db = -5.0
+id = &"shotgun"
+display_name = "Дробовик с барабаном"
+description = "Обрез-дробовик с барабаном на 6 патронов 12 калибра. Заряжается по одному патрону. Картечь: страшен вблизи."
+icon = ExtResource("2_icon")
+weight = 3.2
+category = 5
+max_stack = 1
+world_color = Color(0.4, 0.28, 0.16, 1)

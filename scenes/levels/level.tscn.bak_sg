@@ -1,0 +1,146 @@
+[gd_scene load_steps=25 format=3]
+
+[ext_resource type="Script" path="res://scripts/world/terrain.gd" id="1_terrain"]
+[ext_resource type="Script" path="res://scripts/world/environment_spawner.gd" id="2_spawner"]
+[ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="3_player"]
+[ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="4_hud"]
+[ext_resource type="PackedScene" path="res://scenes/ui/inventory_ui.tscn" id="5_invui"]
+[ext_resource type="PackedScene" path="res://scenes/items/item_pickup.tscn" id="6_pickup"]
+[ext_resource type="Resource" path="res://resources/items/medkit.tres" id="7_medkit"]
+[ext_resource type="Resource" path="res://resources/items/bandage.tres" id="8_bandage"]
+[ext_resource type="Resource" path="res://resources/items/canned_food.tres" id="9_tin"]
+[ext_resource type="Resource" path="res://resources/items/vodka.tres" id="10_vodka"]
+[ext_resource type="Resource" path="res://resources/items/ammo_545.tres" id="11_ammo"]
+[ext_resource type="Resource" path="res://resources/items/artifact_jellyfish.tres" id="12_jelly"]
+[ext_resource type="Resource" path="res://resources/items/antirad.tres" id="13_antirad"]
+[ext_resource type="PackedScene" path="res://scenes/world/anomaly.tscn" id="14_anomaly"]
+[ext_resource type="PackedScene" path="res://scenes/world/radiation_zone.tscn" id="15_radzone"]
+[ext_resource type="PackedScene" path="res://scenes/world/target_dummy.tscn" id="16_target"]
+[ext_resource type="Resource" path="res://resources/items/pistol.tres" id="17_pistol"]
+[ext_resource type="Resource" path="res://resources/items/ak74.tres" id="18_ak"]
+[ext_resource type="Resource" path="res://resources/items/ammo_9x18.tres" id="19_ammo9"]
+[ext_resource type="Resource" path="res://resources/items/machine_gun.tres" id="20_mg"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_overcast"]
+sky_top_color = Color(0.36, 0.38, 0.42, 1)
+sky_horizon_color = Color(0.56, 0.58, 0.58, 1)
+ground_bottom_color = Color(0.2, 0.21, 0.2, 1)
+ground_horizon_color = Color(0.56, 0.58, 0.58, 1)
+
+[sub_resource type="Sky" id="Sky_overcast"]
+sky_material = SubResource("ProceduralSkyMaterial_overcast")
+
+[sub_resource type="Environment" id="Environment_overcast"]
+background_mode = 2
+sky = SubResource("Sky_overcast")
+tonemap_mode = 2
+fog_enabled = true
+fog_light_color = Color(0.56, 0.58, 0.58, 1)
+fog_density = 0.012
+
+[node name="Level" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_overcast")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-50, 30, 0)
+light_color = Color(0.82, 0.84, 0.88, 1)
+light_energy = 0.8
+shadow_enabled = true
+directional_shadow_max_distance = 120.0
+
+[node name="Terrain" type="MeshInstance3D" parent="."]
+script = ExtResource("1_terrain")
+
+[node name="Props" type="Node3D" parent="."]
+script = ExtResource("2_spawner")
+terrain_path = NodePath("../Terrain")
+
+[node name="Pickups" type="Node3D" parent="."]
+
+[node name="Medkit" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(3, 0, -4)
+item = ExtResource("7_medkit")
+
+[node name="Bandages" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(-3, 0, -5)
+item = ExtResource("8_bandage")
+amount = 3
+
+[node name="CannedFood" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(5, 0, 2)
+item = ExtResource("9_tin")
+amount = 2
+
+[node name="Vodka" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(-5, 0, 3)
+item = ExtResource("10_vodka")
+
+[node name="Ammo1" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(0, 0, 6)
+item = ExtResource("11_ammo")
+amount = 30
+
+[node name="Ammo2" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(2, 0, -8)
+item = ExtResource("11_ammo")
+amount = 45
+
+[node name="Jellyfish" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(7, 0, -6)
+item = ExtResource("12_jelly")
+
+[node name="Antirad" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(-7, 0, -2)
+item = ExtResource("13_antirad")
+
+[node name="Pistol" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(-1.5, 0, -3)
+item = ExtResource("17_pistol")
+
+[node name="Ammo9mm" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(-3, 0, -2)
+item = ExtResource("19_ammo9")
+amount = 32
+
+[node name="Rifle" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(1.5, 0, -3)
+item = ExtResource("18_ak")
+
+[node name="MachineGun" parent="Pickups" instance=ExtResource("6_pickup")]
+position = Vector3(3.5, 0, -3)
+item = ExtResource("20_mg")
+
+[node name="ShootingRange" type="Node3D" parent="."]
+
+[node name="Target1" parent="ShootingRange" instance=ExtResource("16_target")]
+position = Vector3(-3, 0, -14)
+
+[node name="Target2" parent="ShootingRange" instance=ExtResource("16_target")]
+position = Vector3(3, 0, -22)
+
+[node name="Target3" parent="ShootingRange" instance=ExtResource("16_target")]
+position = Vector3(-1, 0, -32)
+
+[node name="Anomalies" type="Node3D" parent="."]
+
+[node name="Electra" parent="Anomalies" instance=ExtResource("14_anomaly")]
+position = Vector3(10, 0, 4)
+
+[node name="Zharka" parent="Anomalies" instance=ExtResource("14_anomaly")]
+position = Vector3(-9, 0, 8)
+kind = 1
+radius = 2.0
+damage = 14.0
+tick_interval = 0.8
+
+[node name="RadiationZone" parent="." instance=ExtResource("15_radzone")]
+position = Vector3(-26, 1, -14)
+
+[node name="Player" parent="." instance=ExtResource("3_player")]
+position = Vector3(0, 1.5, 0)
+
+[node name="HUD" parent="." instance=ExtResource("4_hud")]
+
+[node name="InventoryUI" parent="." instance=ExtResource("5_invui")]

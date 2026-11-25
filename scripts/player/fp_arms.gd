@@ -22,6 +22,8 @@ var _skeleton: Skeleton3D
 var _left_bones: Array[int] = []
 var _hand_attach: BoneAttachment3D
 var _run_k: float = 0.0   # 1 — нож и бег: руки стоят на теле, как у третьего лица, а не на оружии
+var _reload_on: bool = false
+var _hand_l_attach: BoneAttachment3D
 var _left_hide: float = 0.0   # 1 — левая рука свёрнута (удар ножом: рука едет вместе с ножом и мелькала бы перед камерой)
 
 
@@ -55,7 +57,7 @@ func _ready() -> void:
 		for anim_name: StringName in _anim.get_animation_list():
 			var anim := _anim.get_animation(anim_name)
 			if anim != null:
-				anim.loop_mode = Animation.LOOP_LINEAR
+				anim.loop_mode = Animation.LOOP_NONE if String(anim_name).ends_with("_reload") else Animation.LOOP_LINEAR
 		play("idle", 1.0)
 	_ok = true
 
@@ -67,7 +69,7 @@ func is_ready_ok() -> bool:
 
 ## Включает анимацию по имени (с суффиксом «_loop» или без) и задаёт её скорость.
 func play(base: String, speed: float) -> void:
-	if _anim == null:
+	if _anim == null or _reload_on:
 		return
 	var anim_name := ""
 	if _anim.has_animation(base):
@@ -87,8 +89,44 @@ func play(base: String, speed: float) -> void:
 	_anim.speed_scale = speed
 
 
+## Перезарядка: одноразовая анимация fp_<оружие>_reload на заданное время.
+func start_reload(kind: String, duration: float) -> void:
+	var n := "fp_%s_reload" % kind
+	if _anim == null or not _anim.has_animation(n):
+		return
+	_reload_on = true
+	_anim.play(n, 0.12)
+	_anim.speed_scale = _anim.current_animation_length / maxf(duration, 0.1)
+
+
+## Дробовик: время анимации задаёт код оружия (доля 0..1)
+func seek_reload(kind: String, u: float) -> void:
+	var n := "fp_%s_reload" % kind
+	if _anim == null or not _anim.has_animation(n):
+		return
+	if not _reload_on or _anim.current_animation != n:
+		_reload_on = true
+		_anim.play(n, 0.0)   # без перехода: при нулевой скорости переход завис бы и рука стояла на месте
+	_anim.speed_scale = 0.0
+	_anim.seek(u * _anim.get_animation(n).length, true)
+
+
+func end_reload() -> void:
+	_reload_on = false
+
+
+func get_hand_l() -> Node3D:
+	if _skeleton == null or _skeleton.find_bone("Hand.L") < 0:
+		return null
+	if _hand_l_attach == null:
+		_hand_l_attach = BoneAttachment3D.new()
+		_hand_l_attach.bone_name = "Hand.L"
+		_skeleton.add_child(_hand_l_attach)
+	return _hand_l_attach
+
+
 func set_speed(speed: float) -> void:
-	if _anim != null:
+	if _anim != null and not _reload_on:
 		_anim.speed_scale = speed
 
 

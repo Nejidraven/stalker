@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="Weapon" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/weapon.gd" id="1_weapon"]
+[ext_resource type="Texture2D" path="res://assets/icons/ak74.png" id="2_icon"]
+
+[resource]
+script = ExtResource("1_weapon")
+slot = 2
+ammo_id = &"ammo_545"
+damage = 42.0
+fire_rate = 650.0
+magazine_size = 75
+reload_time = 3.6
+spread_deg = 1.1
+max_range = 250.0
+recoil_pitch_deg = 1.2
+recoil_yaw_deg = 0.7
+can_single = false
+can_auto = true
+model_path = "res://assets/machine_gun.glb"
+fp_pose = &"machine_gun"
+hold_offset = Vector3(-0.03, 0.01, -0.22)
+muzzle_offset = Vector3(-0.0165, -0.03, -0.46)
+hands_path = "res://assets/hands_rifle.glb"
+ads_offset = Vector3(0.0186, -0.04, -0.22)
+ads_fov = 55.0
+shot_sound_path = "res://assets/audio/rifle_shot.wav"
+shot_volume_db = -9.0
+id = &"machine_gun"
+display_name = "Ручной пулемёт"
+description = "Пулемёт с барабанным магазином на 75 патронов (5.45×39). Высокая огневая мощь, плотная отдача."
+icon = ExtResource("2_icon")
+weight = 6.8
+category = 5
+max_stack = 1
+world_color = Color(0.35, 0.35, 0.35, 1)

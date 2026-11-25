@@ -25,7 +25,9 @@ const MAX_HOLES := 40
 ## Рассчитано в Blender вместе с позами рук (низко / у плеча при прицеливании).
 const TP_LOW := {
 	"knife": Transform3D(Basis(Vector3(-0.99027, -0.00000, -0.13917), Vector3(0.05882, 0.90631, -0.41851), Vector3(0.12613, -0.42262, -0.89749)), Vector3(-0.20000, -0.12200, 0.32000)),
-	"rifle": Transform3D(Basis(Vector3(-0.81915, 0.00000, 0.57358), Vector3(0.18674, 0.94552, 0.26669), Vector3(-0.54233, 0.32557, -0.77452)), Vector3(-0.02310, -0.01440, 0.38370)),
+	"rifle": Transform3D(Basis(Vector3(-0.81915, 0.00000, 0.57358), Vector3(0.10944, 0.98163, 0.15630), Vector3(-0.56304, 0.19081, -0.80410)), Vector3(-0.02920, 0.02140, 0.37500)),
+	"shotgun": Transform3D(Basis(Vector3(-0.81915, 0.00000, 0.57358), Vector3(0.10944, 0.98163, 0.15630), Vector3(-0.56304, 0.19081, -0.80410)), Vector3(-0.02920, 0.02140, 0.37500)),
+	"machine_gun": Transform3D(Basis(Vector3(-0.81915, 0.00000, 0.57358), Vector3(0.10944, 0.98163, 0.15630), Vector3(-0.56304, 0.19081, -0.80410)), Vector3(-0.02920, 0.01580, 0.37130)),
 	"pistol": Transform3D(Basis(Vector3(-1.00000, 0.00000, 0.00000), Vector3(0.00000, 0.97815, 0.20791), Vector3(0.00000, 0.20791, -0.97815)), Vector3(-0.06000, 0.15800, 0.40000)),
 }
 ## Нож в руке (третье лицо): положение относительно кости Hand.R, измерено в игре по позе idle_knife
@@ -35,6 +37,8 @@ const TP_HAND := {
 const TP_AIM := {
 	"knife": Transform3D(Basis(Vector3(-0.99027, -0.00000, -0.13917), Vector3(0.05882, 0.90631, -0.41851), Vector3(0.12613, -0.42262, -0.89749)), Vector3(-0.20000, -0.12200, 0.32000)),
 	"rifle": Transform3D(Basis(Vector3(-1.00000, 0.00000, 0.00000), Vector3(0.00000, 1.00000, 0.00000), Vector3(0.00000, 0.00000, -1.00000)), Vector3(-0.09000, 0.35000, 0.30000)),
+	"shotgun": Transform3D(Basis(Vector3(-1.00000, 0.00000, 0.00000), Vector3(0.00000, 1.00000, 0.00000), Vector3(0.00000, 0.00000, -1.00000)), Vector3(-0.09000, 0.35000, 0.30000)),
+	"machine_gun": Transform3D(Basis(Vector3(-1.00000, 0.00000, 0.00000), Vector3(0.00000, 1.00000, 0.00000), Vector3(0.00000, 0.00000, -1.00000)), Vector3(-0.09000, 0.35000, 0.47000)),
 	"pistol": Transform3D(Basis(Vector3(-1.00000, 0.00000, 0.00000), Vector3(0.00000, 1.00000, 0.00000), Vector3(0.00000, 0.00000, -1.00000)), Vector3(-0.09000, 0.33000, 0.52000)),
 }
 
@@ -43,6 +47,8 @@ const TP_AIM := {
 ## мушка была ровно в центре экрана, а пуля летела по линии «целик — мушка».
 const SIGHTS := {
 	"rifle": [Vector3(0.0, 0.0, 0.042), Vector3(0.0, 0.008, -0.393)],
+	"machine_gun": [Vector3(-0.0186, 0.0310, 0.137), Vector3(-0.0186, 0.0203, -0.4138)],
+	"shotgun": [Vector3(0.0, 0.076, 0.056), Vector3(0.0, 0.037, -0.384)],
 	"pistol": [Vector3(0.0, 0.0, 0.013), Vector3(0.0, -0.003, -0.187)],
 }
 
@@ -136,18 +142,20 @@ var _draw_t: float = 1.0   # 0 — оружие только достают, 1 �
 ## Пистолет на бегу: опущен и уведён вправо (позиция в координатах груди, наклон, поворот в градусах)
 const TP_RUN := {"pistol": [Vector3(-0.20, -0.142, 0.22), 40.0, -25.0]}
 var _tp_run_blend: float = 0.0
-const TP_LOW_PITCH := {"rifle": 19.0, "pistol": 12.0, "knife": -25.0}
-const TP_LOW_YAW := {"rifle": 35.0, "pistol": 0.0, "knife": -8.0}
-const DRAW_TIME := {"rifle": 0.38, "pistol": 0.3, "knife": 0.3}
+const TP_LOW_PITCH := {"rifle": 11.0, "machine_gun": 11.0, "shotgun": 11.0, "pistol": 12.0, "knife": -25.0}
+const TP_LOW_YAW := {"rifle": 35.0, "machine_gun": 35.0, "shotgun": 35.0, "pistol": 0.0, "knife": -8.0}
+const DRAW_TIME := {"rifle": 0.38, "machine_gun": 0.48, "shotgun": 0.4, "pistol": 0.3, "knife": 0.3}
 # Путь оружия при доставании (координаты рига: x вбок, y вперёд-минус, z вверх; как в Blender-тексте gen_tp):
 # пистолет — из кармана, автомат — из-за спины. [старт, середина дуги, начальный наклон ствола в градусах]
 const DRAW_PATH := {
 	"pistol": [Vector3(-0.24, -0.02, 0.88), Vector3(-0.17, -0.24, 1.06), 85.0],
 	"knife": [Vector3(-0.26, -0.02, 0.92), Vector3(-0.24, -0.22, 1.04), 70.0],
 	"rifle": [Vector3(-0.22, 0.16, 1.55), Vector3(-0.30, -0.10, 1.45), -80.0],
+	"machine_gun": [Vector3(-0.24, 0.18, 1.55), Vector3(-0.32, -0.10, 1.45), -80.0],
+	"shotgun": [Vector3(-0.22, 0.16, 1.55), Vector3(-0.30, -0.10, 1.45), -80.0],
 }
 # Доп. наклон ствола вверх при прицеливании (рад), пули при этом всё равно летят в центр
-const ADS_EXTRA_TILT := {"rifle": 0.06}
+const ADS_EXTRA_TILT := {"rifle": 0.06, "machine_gun": 0.065, "shotgun": 0.06}
 var _sprint_blend: float = 0.0
 var _sway: Vector2 = Vector2.ZERO
 var _last_rot: Vector2 = Vector2.ZERO
@@ -156,6 +164,17 @@ var _kick_rot: float = 0.0
 var _recoil_accum: float = 0.0   # сколько градусов камера ушла вверх от стрельбы (часть вернётся)
 var _since_shot: float = 10.0
 var _reload_total: float = 1.0
+var _reload_serial: int = 0      # растёт с каждой перезарядкой: по нему игрок включает анимацию рук
+var _rl_stage: int = 0           # 0 — магазин в оружии, 1 — старый в руке, 2 — выброшен, 3 — новый в руке, 4 — вставлен
+var _fp_model: Node3D
+var _fp_mag: Node3D
+var _tp_mag: Node3D
+var _tp_hand_l: BoneAttachment3D
+var _falling_mags: Array = []
+const RL_GRAB := 0.14
+const RL_DROP := 0.46
+const RL_NEW := 0.60
+const RL_SEAT := 0.90
 
 
 func _ready() -> void:
@@ -256,12 +275,19 @@ func _update_weapon_motion(delta: float, arm: Node3D, first_person: bool) -> voi
 	var calm := 1.0 - 0.8 * _aim_blend
 	var bob := Vector3(cos(_bob_t) * 0.008, -absf(sin(_bob_t)) * 0.010, 0.0) * move_k * calm
 	bob.y += sin(Time.get_ticks_msec() * 0.0013) * 0.0015 * calm
+	# Бег: руки с оружием заметно покачиваются в такт шагам
+	var run_sway_pos := Vector3(sin(_bob_t * 0.5) * 0.02, -absf(sin(_bob_t * 0.5)) * 0.022, cos(_bob_t) * 0.008) * _sprint_blend
+	var run_sway_rot := Vector3(cos(_bob_t) * 0.035, sin(_bob_t * 0.5) * 0.06, sin(_bob_t * 0.5) * 0.07) * _sprint_blend
 
 	# Перезарядка: руки с оружием уходят вниз и вбок, потом возвращаются
 	var reload_k := 0.0
-	if _reloading:
+	_sg_tilt = move_toward(_sg_tilt, 1.0 if _sg_active else 0.0, delta * 4.0)
+	var sg_gun: bool = String(current.fp_pose) == "shotgun"
+	if sg_gun:
+		reload_k = smoothstep(0.0, 1.0, _sg_tilt)   # дробовик только наклоняется, с места не двигается
+	elif _reloading:
 		var progress := 1.0 - clampf(_reload_left / maxf(_reload_total, 0.01), 0.0, 1.0)
-		reload_k = sin(progress * PI)
+		reload_k = smoothstep(0.0, 0.16, progress) * (1.0 - smoothstep(0.84, 1.0, progress))   # поза держится всю перезарядку
 
 	var atk_target := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 	if _atk_step >= 0:
@@ -277,15 +303,15 @@ func _update_weapon_motion(delta: float, arm: Node3D, first_person: bool) -> voi
 
 	# Бег: ствол опущен и уведён в сторону
 	var sprint_off := Vector3(-0.06, -0.05, 0.05) * _sprint_blend
-	var reload_off := Vector3(-0.03, -0.14, 0.05) * reload_k
+	var reload_off := Vector3(0.07, 0.02, -0.12) * reload_k * (0.0 if sg_gun else 1.0)   # оружие уходит вправо и вперёд от камеры, чтобы руки со сменой магазина были в кадре и не закрывали обзор
 	var draw_off := Vector3(0.05, -0.32, 0.12) * draw_k
 	var sway_k := 2.5 if current.melee else 1.0   # нож заметнее реагирует на поворот камеры
 	var sway_pos := Vector3(-_sway.y * 0.35, _sway.x * 0.35, 0.0) if current.melee else Vector3.ZERO
-	_model_holder.position = current.hold_offset + sway_pos + Vector3(0.0, 0.0, _kick) + bob + sprint_off + reload_off + draw_off + _atk_pos
+	_model_holder.position = current.hold_offset + sway_pos + Vector3(0.0, 0.0, _kick) + bob + sprint_off + run_sway_pos + reload_off + draw_off + _atk_pos
 	_model_holder.rotation = Vector3(
-		_sway.x * sway_k + _kick_rot + deg_to_rad(current.fp_pitch_deg) + _atk_rot.x - 0.35 * _sprint_blend - 0.35 * reload_k - 0.9 * draw_k + _ads_extra() - _sight_tilt() * _aim_blend,
-		_sway.y * sway_k + 0.55 * _sprint_blend + 0.25 * draw_k + _atk_rot.y,
-		0.5 * reload_k + 0.3 * draw_k + clampf(-_sway.y * 0.6 * sway_k, -0.25, 0.25) + _atk_rot.z
+		_sway.x * sway_k + _kick_rot + deg_to_rad(current.fp_pitch_deg) + _atk_rot.x - 0.35 * _sprint_blend + run_sway_rot.x + 0.12 * reload_k - 0.9 * draw_k + _ads_extra() - _sight_tilt() * _aim_blend,
+		_sway.y * sway_k + 0.55 * _sprint_blend + run_sway_rot.y + 0.25 * draw_k + _atk_rot.y,
+		-0.8 * reload_k + run_sway_rot.z + 0.3 * draw_k + clampf(-_sway.y * 0.6 * sway_k, -0.25, 0.25) + _atk_rot.z
 	)
 	if _hands != null and is_instance_valid(_hands):
 		_hands.visible = first_person   # руки видны только от первого лица
@@ -317,8 +343,13 @@ func _physics_process(delta: float) -> void:
 		_recoil_accum -= step
 		_player.call("add_recoil", -step, 0.0)
 
+	_update_falling_mags(delta)
+	if _reloading and _sg_active:
+		_sg_update(delta)
+		return
 	if _reloading:
 		_reload_left -= delta
+		_reload_step(1.0 - clampf(_reload_left / maxf(_reload_total, 0.01), 0.0, 1.0))
 		if _reload_left <= 0.0:
 			_finish_reload()
 		return
@@ -329,8 +360,8 @@ func _physics_process(delta: float) -> void:
 		return
 	if _player.call("is_sprinting"):
 		return   # на бегу оружие опущено, стрелять нельзя
-	if String(current.fp_pose) == "rifle" and not bool(_player.call("is_first_person")) and not (_aiming and _tp_aim_blend > 0.5):
-		return   # автомат от третьего лица в расслабленной позе: стрелять нельзя (пистолет в позе «наготове» можно)
+	if (String(current.fp_pose) == "rifle" or String(current.fp_pose) == "machine_gun" or String(current.fp_pose) == "shotgun") and not bool(_player.call("is_first_person")) and not (_aiming and _tp_aim_blend > 0.5):
+		return   # автомат и пулемёт от третьего лица в расслабленной позе: стрелять нельзя (пистолет в позе «наготове» можно)
 
 	if current.melee:
 		if Input.is_action_just_pressed("fire"):
@@ -492,22 +523,23 @@ func _fire_bullet() -> void:
 		base_right = base_dir.cross(Vector3.UP).normalized()
 		base_up = base_right.cross(base_dir).normalized()
 
-	var cone := deg_to_rad(_current_spread())
-	var angle := randf() * TAU
-	var radius := sqrt(randf()) * tan(cone)
-	var dir := (base_dir + base_right * cos(angle) * radius + base_up * sin(angle) * radius).normalized()
-	var end := start + dir * current.max_range
+	for _pellet in maxi(current.pellets, 1):
+		var cone := deg_to_rad(_current_spread())
+		var angle := randf() * TAU
+		var radius := sqrt(randf()) * tan(cone)
+		var dir := (base_dir + base_right * cos(angle) * radius + base_up * sin(angle) * radius).normalized()
+		var end := start + dir * current.max_range
 
-	var query := PhysicsRayQueryParameters3D.create(start, end, 1)
-	query.exclude = [_player.get_rid()]
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		var query := PhysicsRayQueryParameters3D.create(start, end, 1)
+		query.exclude = [_player.get_rid()]
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
 
-	var tracer_end := end
-	if not hit.is_empty():
-		tracer_end = hit["position"]
-		_apply_hit(hit)
+		var tracer_end := end
+		if not hit.is_empty():
+			tracer_end = hit["position"]
+			_apply_hit(hit)
 
-	_spawn_tracer(_muzzle.global_position, tracer_end)
+		_spawn_tracer(_muzzle.global_position, tracer_end)
 	_muzzle_flash()
 	_shot_player.play()
 
@@ -640,7 +672,11 @@ func _reserve() -> int:
 
 
 func _start_reload() -> void:
-	if current == null or _reloading or current.melee:
+	if current == null or current.melee:
+		return
+	if _reloading:
+		if _sg_active:
+			_sg_end(true)   # повторное нажатие R останавливает зарядку дробовика
 		return
 	if int(_mags.get(current.id, 0)) >= current.magazine_size:
 		return
@@ -649,20 +685,26 @@ func _start_reload() -> void:
 			notice.emit("Нет патронов")
 			_empty_notice_cd = 1.5
 		return
+	if String(current.fp_pose) == "shotgun":
+		_sg_begin()
+		return
 	# Стресс замедляет перезарядку: мало здоровья или только что попали, руки торопятся и дрожат
 	var health_fraction := float(_player.get("health")) / maxf(float(_player.get("max_health")), 1.0)
 	var trauma: float = _player.call("get_trauma")
 	var stress := clampf((1.0 - health_fraction) * 0.6 + trauma * 0.6, 0.0, 1.0)
-	_reload_total = current.reload_time * (1.0 + stress * 0.8)
+	_reload_total = current.reload_time * 0.75 * (1.0 + stress * 0.8)   # 0.75: перезарядка бодрее
 	if randf() < trauma * 0.5:
 		_reload_total += 0.5   # выронил или замешкался
 	_reloading = true
 	_reload_left = _reload_total
+	_rl_stage = 0
+	_reload_serial += 1
 	_reload_player.play()
 	reload_started.emit(_reload_total)
 
 
 func _finish_reload() -> void:
+	_reload_step(1.0)
 	_reloading = false
 	if current == null:
 		return
@@ -674,9 +716,13 @@ func _finish_reload() -> void:
 
 
 func _cancel_reload() -> void:
+	if _sg_active:
+		_sg_active = false
+		_free_shells()
 	if _reloading:
 		_reloading = false
 		_reload_player.stop()
+		_rl_restore()
 
 
 func _emit_ammo() -> void:
@@ -769,6 +815,8 @@ func _build_model() -> void:
 			model.transform = Transform3D(tilt, KNIFE_FP_PIVOT - tilt * KNIFE_FP_PIVOT)
 	if not in_hand:
 		_model_holder.add_child(model)
+	_fp_model = model
+	_fp_mag = _make_mag(model)
 	_model_holder.visible = true
 	_build_tp_model()
 	_muzzle.position = current.muzzle_offset
@@ -929,6 +977,7 @@ func _build_tp_model() -> void:
 	_polish_gun(model, current.model_path)
 	_tp_attach.add_child(model)
 	_tp_model = model
+	_tp_mag = _make_mag(model)
 
 
 ## Лезвие ножа блестит как сталь: гладкая поверхность, высокая металличность, светлее исходной текстуры.
@@ -963,11 +1012,13 @@ func _polish_gun(model: Node, model_path: String) -> void:
 		for i in mi.mesh.get_surface_count():
 			var mat := mi.mesh.surface_get_material(i) as StandardMaterial3D
 			if mat != null and mat.metallic_texture == null:
+				# Делаем металл автомата светлее и отчётливее
+				mat.albedo_color = Color(1.35, 1.35, 1.4)
 				mat.metallic = 1.0
 				mat.metallic_texture = orm
 				mat.metallic_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
-				mat.metallic_specular = 0.9
-				mat.roughness = 1.0
+				mat.metallic_specular = 0.95
+				mat.roughness = 0.85
 				mat.roughness_texture = orm
 				mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
 
@@ -1053,7 +1104,8 @@ func _sight_ads_offset() -> Vector3:
 		# доп. наклон ствола поднимает мушку над перекрестием — опускаем оружие, чтобы верх мушки лёг на него
 		var full_extra := float(ADS_EXTRA_TILT.get(kind, 0.0))
 		var front: Vector3 = SIGHTS[kind][1]
-		ads.y -= sin(full_extra) * absf(front.z - rear.z) * 0.95
+		var mult := 0.72 if kind == "machine_gun" else 0.95
+		ads.y -= sin(full_extra) * absf(front.z - rear.z) * mult
 	return ads
 
 
@@ -1067,3 +1119,241 @@ func _ads_extra() -> float:
 	if current == null:
 		return 0.0
 	return float(ADS_EXTRA_TILT.get(String(current.fp_pose), 0.0)) * _aim_blend
+
+
+# --- Магазины и перезарядка ------------------------------------------------------
+
+## Магазин лежит в отдельном файле (<оружие>_mag.glb) в той же системе координат, что и оружие.
+func _make_mag(model: Node3D) -> Node3D:
+	if current == null or current.melee:
+		return null
+	var path := current.model_path.replace(".glb", "_mag.glb")
+	if not ResourceLoader.exists(path):
+		return null
+	if not _scene_cache.has(path):
+		_scene_cache[path] = load(path)
+	var scene := _scene_cache[path] as PackedScene
+	if scene == null:
+		return null
+	var mag := scene.instantiate() as Node3D
+	for node in mag.find_children("*", "GeometryInstance3D", true, false):
+		(node as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_polish_gun(mag, current.model_path)
+	model.add_child(mag)
+	return mag
+
+
+func _get_tp_hand_l() -> BoneAttachment3D:
+	if _tp_hand_l != null and is_instance_valid(_tp_hand_l):
+		return _tp_hand_l
+	var skeleton := _find_player_skeleton()
+	if skeleton == null or skeleton.find_bone("Hand.L") < 0:
+		return null
+	_tp_hand_l = BoneAttachment3D.new()
+	_tp_hand_l.name = "TpHandL"
+	_tp_hand_l.bone_name = "Hand.L"
+	skeleton.add_child(_tp_hand_l)
+	return _tp_hand_l
+
+
+func _get_fp_hand_l() -> Node3D:
+	var arms := _player.get_node_or_null("FpArms")
+	if arms != null and arms.has_method("get_hand_l"):
+		return arms.call("get_hand_l") as Node3D
+	return null
+
+
+func _reparent_keep(node: Node3D, new_parent: Node) -> void:
+	if node == null or not is_instance_valid(node) or new_parent == null:
+		return
+	node.reparent(new_parent, true)
+
+
+## Ход перезарядки по доле времени: рука берёт магазин, старый падает, из подсумка достаётся новый и вставляется.
+func _reload_step(p: float) -> void:
+	if current == null or current.melee:
+		return
+	if _rl_stage == 0 and p >= RL_GRAB:
+		_rl_stage = 1
+		_reparent_keep(_fp_mag, _get_fp_hand_l())
+		_reparent_keep(_tp_mag, _get_tp_hand_l())
+		_fp_grip = _fp_mag.transform if _fp_mag != null and is_instance_valid(_fp_mag) else Transform3D.IDENTITY
+		_tp_grip = _tp_mag.transform if _tp_mag != null and is_instance_valid(_tp_mag) else Transform3D.IDENTITY
+	if _rl_stage == 1 and p >= RL_DROP:
+		_rl_stage = 2
+		var fp_active: bool = _player.call("is_first_person")
+		_drop_mag(_fp_mag if fp_active else _tp_mag)
+		if fp_active:
+			if _tp_mag != null and is_instance_valid(_tp_mag): _tp_mag.queue_free()
+		else:
+			if _fp_mag != null and is_instance_valid(_fp_mag): _fp_mag.queue_free()
+		_fp_mag = null
+		_tp_mag = null
+	if _rl_stage == 2 and p >= RL_NEW:
+		_rl_stage = 3
+		_fp_mag = _make_mag_in_hand(_fp_model, _get_fp_hand_l(), _fp_grip)
+		_tp_mag = _make_mag_in_hand(_tp_model, _get_tp_hand_l(), _tp_grip)
+	if _rl_stage == 3 and p >= RL_SEAT:
+		_rl_stage = 4
+		_seat_mag(_fp_mag, _fp_model)
+		_seat_mag(_tp_mag, _tp_model)
+
+
+var _fp_grip: Transform3D = Transform3D.IDENTITY
+var _tp_grip: Transform3D = Transform3D.IDENTITY
+
+func _make_mag_in_hand(model: Node3D, hand: Node3D, grip: Transform3D) -> Node3D:
+	if model == null or not is_instance_valid(model):
+		return null
+	var mag := _make_mag(model)
+	if mag != null and hand != null:
+		mag.reparent(hand, false)
+		mag.transform = grip
+	return mag
+
+
+func _seat_mag(mag: Node3D, model: Node3D) -> void:
+	if mag == null or not is_instance_valid(mag) or model == null or not is_instance_valid(model):
+		return
+	mag.reparent(model, false)
+	mag.transform = Transform3D.IDENTITY
+
+
+func _drop_mag(mag: Node3D) -> void:
+	if mag == null or not is_instance_valid(mag):
+		return
+	var xf := mag.global_transform
+	mag.get_parent().remove_child(mag)
+	get_tree().current_scene.add_child(mag)
+	mag.global_transform = xf
+	var side := (_player as Node3D).global_transform.basis.x
+	_falling_mags.append({"node": mag, "vel": Vector3(0.0, -0.4, 0.0) + side * randf_range(-0.3, 0.3), "spin": Vector3(randf_range(-4, 4), randf_range(-2, 2), randf_range(-4, 4)), "t": 0.0, "landed": 0.0})
+
+
+func _update_falling_mags(delta: float) -> void:
+	for i in range(_falling_mags.size() - 1, -1, -1):
+		var d: Dictionary = _falling_mags[i]
+		var n := d["node"] as Node3D
+		if n == null or not is_instance_valid(n):
+			_falling_mags.remove_at(i)
+			continue
+		var floor_y := _player.global_position.y + 0.03
+		if float(d["landed"]) <= 0.0:
+			d["vel"] = (d["vel"] as Vector3) + Vector3(0.0, -9.8 * delta, 0.0)
+			n.global_position += (d["vel"] as Vector3) * delta
+			n.rotate_x((d["spin"] as Vector3).x * delta)
+			n.rotate_z((d["spin"] as Vector3).z * delta)
+			if n.global_position.y <= floor_y:
+				n.global_position.y = floor_y
+				d["landed"] = 0.001
+		else:
+			d["landed"] = float(d["landed"]) + delta
+			if float(d["landed"]) > 0.6:
+				n.queue_free()
+				_falling_mags.remove_at(i)
+
+
+## Возвращает магазин на место (отмена перезарядки).
+func _rl_restore() -> void:
+	_free_shells()
+	for m in [_fp_mag, _tp_mag]:
+		if m != null and is_instance_valid(m):
+			m.queue_free()
+	_fp_mag = null
+	_tp_mag = null
+	if _fp_model != null and is_instance_valid(_fp_model) and current != null:
+		_fp_mag = _make_mag(_fp_model)
+	if _tp_model != null and is_instance_valid(_tp_model) and current != null:
+		_tp_mag = _make_mag(_tp_model)
+	_rl_stage = 0
+
+
+# --- Дробовик: патроны в барабан по одному -------------------------------------
+
+## Анимация перезарядки (120 кадров) — это вход + цикл «достал патрон из подсумка — вставил»:
+## первая вставка на 0.31, дальше каждые 0.27. Время анимации ведёт код, поэтому цикл можно
+## крутить столько раз, сколько нужно патронов, и остановить в любой момент.
+const SG_RATE := 1.0 / 3.0      # доля анимации в секунду
+const SG_PERIOD := 0.27
+const SG_TAKE0 := 0.17          # рука достаёт патрон из подсумка
+const SG_IN0 := 0.31            # патрон вставлен в барабан
+const SG_LOOP_START := 0.35
+## Положение патрона в пальцах относительно кости Hand.L (рассчитано в Blender)
+const SG_SHELL_HAND := Transform3D(Basis(Vector3(-0.10603, 0.06029, -0.99253), Vector3(-0.98940, -0.10603, 0.09925), Vector3(-0.09925, 0.99253, 0.07090)), Vector3(-0.03618, 0.00045, -0.05660))
+var _sg_shells: Array = []
+var _sg_active: bool = false
+var _sg_u: float = 0.0
+var _sg_total: int = 0
+var _sg_k_take: int = 0
+var _sg_k_in: int = 0
+var _sg_tilt: float = 0.0
+
+
+func _sg_begin() -> void:
+	_sg_total = mini(current.magazine_size - int(_mags.get(current.id, 0)), _reserve())
+	_sg_u = 0.0
+	_sg_k_take = 0
+	_sg_k_in = 0
+	_sg_active = true
+	_reloading = true
+	_reload_serial += 1
+	_reload_player.play()
+	reload_started.emit((SG_IN0 + SG_PERIOD * float(_sg_total - 1)) / SG_RATE + 0.4)
+
+
+func _sg_update(delta: float) -> void:
+	if _sg_u > 0.05 and (Input.is_action_just_pressed("fire") or Input.is_action_just_pressed("reload") or bool(_player.call("is_sprinting"))):
+		_sg_end(true)
+		return
+	_sg_u += delta * SG_RATE
+	while _sg_k_take < _sg_total and _sg_u >= SG_TAKE0 + SG_PERIOD * float(_sg_k_take):
+		_free_shells()
+		_sg_shells.append(_make_shell(_get_fp_hand_l()))
+		_sg_shells.append(_make_shell(_get_tp_hand_l()))
+		_sg_k_take += 1
+	while _sg_k_in < _sg_total and _sg_u >= SG_IN0 + SG_PERIOD * float(_sg_k_in):
+		_free_shells()
+		var taken := _inventory.remove_item(current.ammo_id, mini(1, _reserve()))
+		_mags[current.id] = int(_mags.get(current.id, 0)) + taken
+		_emit_ammo()
+		_sg_k_in += 1
+	if _sg_k_in >= _sg_total:
+		_sg_end(false)
+
+
+func _sg_end(interrupted: bool) -> void:
+	_sg_active = false
+	_reloading = false
+	_free_shells()
+	_cooldown = 0.15
+	if interrupted:
+		_reload_player.stop()
+	_emit_ammo()
+
+
+## Время анимации перезарядки дробовика (доля 0..1): вход, потом цикл
+func sg_anim_u() -> float:
+	if _sg_u <= SG_LOOP_START:
+		return _sg_u
+	return SG_LOOP_START + fmod(_sg_u - SG_LOOP_START, SG_PERIOD)
+
+
+func _make_shell(hand: Node3D) -> Node3D:
+	var path := "res://assets/shotgun_shell.glb"
+	if hand == null or not ResourceLoader.exists(path):
+		return null
+	if not _scene_cache.has(path):
+		_scene_cache[path] = load(path)
+	var shell := (_scene_cache[path] as PackedScene).instantiate() as Node3D
+	for node in shell.find_children("*", "GeometryInstance3D", true, false):
+		(node as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	hand.add_child(shell)
+	shell.transform = SG_SHELL_HAND
+	return shell
+
+
+func _free_shells() -> void:
+	for sh in _sg_shells:
+		if sh != null and is_instance_valid(sh):
+			sh.queue_free()
+	_sg_shells.clear()

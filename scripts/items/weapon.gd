@@ -13,6 +13,8 @@ extends Item
 @export var damage: float = 25.0
 ## Скорострельность, выстрелов в минуту
 @export var fire_rate: float = 600.0
+## Сколько дробинок вылетает за выстрел (дробовик); урон считается за каждую
+@export var pellets: int = 1
 @export var magazine_size: int = 30
 @export var reload_time: float = 2.0
 ## Разброс в градусах (растёт при длинной очереди)
